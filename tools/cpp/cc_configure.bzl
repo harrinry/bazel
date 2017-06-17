@@ -282,7 +282,6 @@ def _crosstool_content(repository_ctx, cc, cpu_value, darwin):
               # Have gcc return the exit code from ld.
               repository_ctx, cc, "-pass-exit-codes")
           ),
-      "ar_flag": ["-static", "-s", "-o"] if darwin else [],
       "cxx_builtin_include_directory": _get_escaped_cxx_inc_directories(repository_ctx, cc),
       "objcopy_embed_flag": ["-I", "binary"],
       "unfiltered_cxx_flag":
@@ -495,49 +494,22 @@ def _find_vc_path(repository_ctx):
     return vc_dir
 
   # 3. User might clean up all environment variables, if so looking for Visual C++ through registry.
-  # This method only works if Visual Studio is installed, and for some reason, is flaky.
-  # https://github.com/bazelbuild/bazel/issues/2434
+  # Works for all VS versions, including Visual Studio 2017.
   auto_configure_warning("Looking for Visual C++ through registry")
-  # Query the installed visual stduios on the machine, should return something like:
-  # HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\14.0
-  # HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\8.0
-  # ...
   reg_binary = _get_system_root(repository_ctx) + "\\system32\\reg.exe"
-  result = _execute(repository_ctx, [reg_binary, "query", "HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\Microsoft\\VisualStudio"])
-  vs_versions = result.split("\n")
-
-  vs_dir = None
-  vs_version_number = -1
-  for entry in vs_versions:
-    entry = entry.strip()
-    # Query InstallDir to find out where a specific version of VS is installed.
-    # The output looks like if succeeded:
-    # HKEY_LOCAL_MACHINE\SOFTWARE\Wow6432Node\Microsoft\VisualStudio\14.0
-    #     InstallDir    REG_SZ    C:\Program Files (x86)\Microsoft Visual Studio 14.0\Common7\IDE\
-    result = repository_ctx.execute([reg_binary, "query", entry, "-v", "InstallDir"])
+  vc_dir = None
+  for version in ["15.0", "14.0", "12.0", "11.0", "10.0", "9.0", "8.0"]:
+    if vc_dir:
+      break
+    result = repository_ctx.execute([reg_binary, "query", "HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\Microsoft\\VisualStudio\\SxS\\VC7", "/v", version])
     if not result.stderr:
       for line in result.stdout.split("\n"):
         line = line.strip()
-        if line.startswith("InstallDir") and line.find("REG_SZ") != -1:
-          install_dir = line[line.find("REG_SZ") + len("REG_SZ"):].strip()
-          path_segments = [ seg for seg in install_dir.split("\\") if seg ]
-          # Extract version number X from "Microsoft Visual Studio X.0"
-          version_number = int(path_segments[-3].split(" ")[-1][:-len(".0")])
-          if version_number > vs_version_number:
-            vs_version_number = version_number
-            vs_dir = "\\".join(path_segments[:-2])
+        if line.startswith(version) and line.find("REG_SZ") != -1:
+          vc_dir = line[line.find("REG_SZ") + len("REG_SZ"):].strip()
 
-  # 4. Try to find Visual C++ build tools 2017
-  result = repository_ctx.execute([reg_binary, "query", "HKEY_LOCAL_MACHINE\\SOFTWARE\\Wow6432Node\\Microsoft\\VisualStudio\\SxS\\VS7", "/v", "15.0"])
-  if not result.stderr:
-    for line in result.stdout.split("\n"):
-      line = line.strip()
-      if line.startswith("15.0") and line.find("REG_SZ") != -1:
-        vs_dir = line[line.find("REG_SZ") + len("REG_SZ"):].strip()
-
-  if not vs_dir:
+  if not vc_dir:
     auto_configure_fail("Visual C++ build tools not found on your machine.")
-  vc_dir = vs_dir + "\\VC\\"
   auto_configure_warning("Visual C++ build tools found at %s" % vc_dir)
   return vc_dir
 
@@ -635,6 +607,32 @@ def _get_crt_library(repository_ctx, debug = False):
   if debug:
     crt_library += "d"
   return crt_library + ".lib"
+
+def _is_no_msvc_wrapper(repository_ctx):
+  """Returns True if NO_MSVC_WRAPPER is set to 1."""
+  env = repository_ctx.os.environ
+  return "NO_MSVC_WRAPPER" in env and env["NO_MSVC_WRAPPER"] == "1"
+
+
+def _get_compilation_mode_content():
+  """Return the content for adding flags for different compilation modes when using MSVC wrapper."""
+  return  "\n".join([
+      "    compilation_mode_flags {",
+      "      mode: DBG",
+      "      compiler_flag: '-Xcompilation-mode=dbg'",
+      "      linker_flag: '-Xcompilation-mode=dbg'",
+      "    }",
+      "    compilation_mode_flags {",
+      "      mode: FASTBUILD",
+      "      compiler_flag: '-Xcompilation-mode=fastbuild'",
+      "      linker_flag: '-Xcompilation-mode=fastbuild'",
+      "    }",
+      "    compilation_mode_flags {",
+      "      mode: OPT",
+      "      compiler_flag: '-Xcompilation-mode=opt'",
+      "      linker_flag: '-Xcompilation-mode=opt'",
+      "    }"])
+
 
 def _escaped_cuda_compute_capabilities(repository_ctx):
   """Returns a %-escaped list of strings representing cuda compute capabilities."""
@@ -764,7 +762,9 @@ def _impl(repository_ctx):
     python_dir = python_binary[0:-10].replace("\\", "\\\\")
     escaped_include_paths = env["INCLUDE"] + (python_dir + "include")
     escaped_lib_paths = _escape_string(env["LIB"] + (python_dir + "libs"))
-    lib_tool = _find_msvc_tool(repository_ctx, vc_path, "lib.exe").replace("\\", "\\\\")
+    msvc_cl_path = _find_msvc_tool(repository_ctx, vc_path, "cl.exe").replace("\\", "/")
+    msvc_link_path = _find_msvc_tool(repository_ctx, vc_path, "link.exe").replace("\\", "/")
+    msvc_lib_path = _find_msvc_tool(repository_ctx, vc_path, "lib.exe").replace("\\", "/")
     if _is_support_whole_archive(repository_ctx, vc_path):
       support_whole_archive = "True"
     else:
@@ -778,11 +778,24 @@ def _impl(repository_ctx):
       escaped_paths = _escape_string(cuda_path.replace("\\", "\\\\") + "/bin;") + escaped_paths
     escaped_compute_capabilities = _escaped_cuda_compute_capabilities(repository_ctx)
     _tpl(repository_ctx, "wrapper/bin/pydir/msvc_tools.py", {
-        "%{lib_tool}": _escape_string(lib_tool),
+        "%{lib_tool}": _escape_string(msvc_lib_path),
         "%{support_whole_archive}": support_whole_archive,
         "%{cuda_compute_capabilities}": ", ".join(
             ["\"%s\"" % c for c in escaped_compute_capabilities]),
     })
+    _tpl(repository_ctx, "windows_cc_wrapper.bat", {
+        "%{msvc_cl_path}": msvc_cl_path,
+        "%{msvc_link_path}": msvc_link_path,
+    }, "windows_cc_wrapper.bat")
+
+    if _is_no_msvc_wrapper(repository_ctx):
+      msvc_cl_path = "windows_cc_wrapper.bat"
+      compilation_mode_content = ""
+    else:
+      msvc_cl_path = "wrapper/bin/msvc_cl.bat"
+      msvc_link_path = "wrapper/bin/msvc_link.bat"
+      msvc_lib_path = "wrapper/bin/msvc_link.bat"
+      compilation_mode_content = _get_compilation_mode_content()
 
     # nvcc will generate some source files under tmp_dir
     escaped_cxx_include_directories = [ "cxx_builtin_include_directory: \"%s\"" % escaped_tmp_dir ]
@@ -797,6 +810,10 @@ def _impl(repository_ctx):
         "%{msvc_env_path}": escaped_paths,
         "%{msvc_env_include}": escaped_include_paths,
         "%{msvc_env_lib}": escaped_lib_paths,
+        "%{msvc_cl_path}": msvc_cl_path,
+        "%{msvc_link_path}": msvc_link_path,
+        "%{msvc_lib_path}": msvc_lib_path,
+        "%{compilation_mode_content}": compilation_mode_content,
         "%{content}": _get_escaped_windows_msys_crosstool_content(repository_ctx),
         "%{crt_option}": _get_crt_option(repository_ctx),
         "%{crt_debug_option}": _get_crt_option(repository_ctx, debug=True),
@@ -891,6 +908,10 @@ def _impl(repository_ctx):
           "%{crt_debug_option}": "",
           "%{crt_library}": "",
           "%{crt_debug_library}": "",
+          "%{msvc_cl_path}": "",
+          "%{msvc_link_path}": "",
+          "%{msvc_lib_path}": "",
+          "%{compilation_mode_content}": "",
       })
 
 cc_autoconf = repository_rule(
@@ -915,6 +936,7 @@ cc_autoconf = repository_rule(
         "HOMEBREW_RUBY_PATH",
         "NO_WHOLE_ARCHIVE_OPTION",
         "USE_DYNAMIC_CRT",
+        "NO_MSVC_WRAPPER",
         "SYSTEMROOT",
         "VS90COMNTOOLS",
         "VS100COMNTOOLS",

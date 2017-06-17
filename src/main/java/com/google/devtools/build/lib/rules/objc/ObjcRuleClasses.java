@@ -28,6 +28,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.devtools.build.lib.actions.Artifact;
+import com.google.devtools.build.lib.actions.ExecutionRequirements;
 import com.google.devtools.build.lib.analysis.BaseRuleClasses;
 import com.google.devtools.build.lib.analysis.RuleConfiguredTargetBuilder;
 import com.google.devtools.build.lib.analysis.RuleContext;
@@ -36,7 +37,6 @@ import com.google.devtools.build.lib.analysis.RuleDefinitionEnvironment;
 import com.google.devtools.build.lib.analysis.Runfiles;
 import com.google.devtools.build.lib.analysis.RunfilesProvider;
 import com.google.devtools.build.lib.analysis.TransitiveInfoProvider;
-import com.google.devtools.build.lib.analysis.actions.ExecutionRequirements;
 import com.google.devtools.build.lib.analysis.actions.SpawnAction;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
 import com.google.devtools.build.lib.cmdline.Label;
@@ -525,28 +525,6 @@ public class ObjcRuleClasses {
     public Metadata getMetadata() {
       return RuleDefinition.Metadata.builder()
           .name("$objc_resource_tools_rule")
-          .type(RuleClassType.ABSTRACT)
-          .build();
-    }
-  }
-
-  /**
-   * Common attributes for {@code objc_*} rules that export an xcode project.
-   */
-  public static class XcodegenRule implements RuleDefinition {
-    @Override
-    public RuleClass build(Builder builder, RuleDefinitionEnvironment env) {
-      return builder
-          .add(attr("$xcodegen", LABEL).cfg(HOST).exec()
-              .value(env.getToolsLabel("//tools/objc:xcodegen")))
-          .add(attr("$dummy_source", LABEL)
-              .value(env.getToolsLabel("//tools/objc:objc_dummy.mm")))
-          .build();
-    }
-    @Override
-    public Metadata getMetadata() {
-      return RuleDefinition.Metadata.builder()
-          .name("$objc_xcodegen_rule")
           .type(RuleClassType.ABSTRACT)
           .build();
     }

@@ -447,11 +447,6 @@ static void CreateCommandLine(CmdLine* result, const string& exe,
       cmdline << '\"';
     }
 
-    // TODO(bazel-team): get rid of the code to append character by character,
-    // because each time a new buffer is allocated and the old one copied, so
-    // this means N allocations (of O(N) size each) and N copies.
-    // If possible, get rid of the whole CreateCommandLine method and do the
-    // logic on the caller side.
     std::string::const_iterator it = s.begin();
     while (it != s.end()) {
       char ch = *it++;
@@ -497,7 +492,6 @@ static void CreateCommandLine(CmdLine* result, const string& exe,
 }  // namespace
 
 string GetJvmVersion(const string& java_exe) {
-  // TODO(bazel-team): implement IPipe for Windows and use that here.
   HANDLE pipe_read, pipe_write;
 
   SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
@@ -634,16 +628,6 @@ static HANDLE CreateJvmOutputFile(const wstring& path,
     HANDLE handle = ::CreateFileW(
         /* lpFileName */ path.c_str(),
         /* dwDesiredAccess */ GENERIC_READ | GENERIC_WRITE,
-        // TODO(laszlocsomor): add FILE_SHARE_DELETE, that allows deleting
-        // jvm.out and maybe fixes
-        // https://github.com/bazelbuild/bazel/issues/2326 . Unfortunately
-        // however if a file that we opened with FILE_SHARE_DELETE is deleted
-        // while its still open, write operations will still succeed but have no
-        // effect, the file won't be recreated. (I haven't tried what happens
-        // with read operations.)
-        //
-        // FILE_SHARE_READ: So that the file can be read while the server is
-        // running
         /* dwShareMode */ FILE_SHARE_READ,
         /* lpSecurityAttributes */ sa,
         /* dwCreationDisposition */ CREATE_ALWAYS,
@@ -722,8 +706,8 @@ void ExecuteDaemon(const string& exe, const std::vector<string>& args_vector,
   SECURITY_ATTRIBUTES sa;
   sa.nLength = sizeof(SECURITY_ATTRIBUTES);
   // We redirect stdin to the NUL device, and redirect stdout and stderr to
-  // `output_file` (opened below) by telling CreateProcess to use these file
-  // handles, so they must be inheritable.
+  // `stdout_file` and `stderr_file` (opened below) by telling CreateProcess to
+  // use these file handles, so they must be inheritable.
   sa.bInheritHandle = TRUE;
   sa.lpSecurityDescriptor = NULL;
 
@@ -735,19 +719,36 @@ void ExecuteDaemon(const string& exe, const std::vector<string>& args_vector,
          "ExecuteDaemon: Could not open NUL device");
   }
 
-  windows_util::AutoHandle output_file(
+  windows_util::AutoHandle stdout_file(
       CreateJvmOutputFile(wdaemon_output.c_str(), &sa));
-  if (!output_file.IsValid()) {
+  if (!stdout_file.IsValid()) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
          "ExecuteDaemon: CreateJvmOutputFile %ls", wdaemon_output.c_str());
   }
+  HANDLE stderr_handle;
+  // We must duplicate the handle to stdout, otherwise "bazel clean --expunge"
+  // won't work, because when it tries to close stdout then stderr, the former
+  // will succeed but the latter will appear to be valid yet still fail to
+  // close.
+  if (!DuplicateHandle(
+          /* hSourceProcessHandle */ GetCurrentProcess(),
+          /* hSourceHandle */ stdout_file,
+          /* hTargetProcessHandle */ GetCurrentProcess(),
+          /* lpTargetHandle */ &stderr_handle,
+          /* dwDesiredAccess */ 0,
+          /* bInheritHandle */ TRUE,
+          /* dwOptions */ DUPLICATE_SAME_ACCESS)) {
+    pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
+         "ExecuteDaemon: DuplicateHandle %ls", wdaemon_output.c_str());
+  }
+  windows_util::AutoHandle stderr_file(stderr_handle);
 
   PROCESS_INFORMATION processInfo = {0};
   STARTUPINFOA startupInfo = {0};
 
   startupInfo.hStdInput = devnull;
-  startupInfo.hStdError = output_file;
-  startupInfo.hStdOutput = output_file;
+  startupInfo.hStdError = stdout_file;
+  startupInfo.hStdOutput = stderr_handle;
   startupInfo.dwFlags |= STARTF_USESTDHANDLES;
   CmdLine cmdline;
   CreateCommandLine(&cmdline, exe, args_vector);

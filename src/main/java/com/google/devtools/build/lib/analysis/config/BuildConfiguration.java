@@ -68,7 +68,6 @@ import com.google.devtools.build.lib.rules.test.TestActionBuilder;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkCallable;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkModule;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkModuleCategory;
-import com.google.devtools.build.lib.util.CPU;
 import com.google.devtools.build.lib.util.Fingerprint;
 import com.google.devtools.build.lib.util.OS;
 import com.google.devtools.build.lib.util.Pair;
@@ -98,6 +97,7 @@ import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
 import java.util.TreeMap;
+import java.util.TreeSet;
 import javax.annotation.Nullable;
 
 /**
@@ -166,10 +166,11 @@ public final class BuildConfiguration implements BuildEvent {
     }
 
     /**
-     * Add items to the shell environment.
+     * Add items to the action environment.
+     *
+     * @param builder the map to add environment variables to
      */
-    @SuppressWarnings("unused")
-    public void setupShellEnvironment(ImmutableMap.Builder<String, String> builder) {
+    public void setupActionEnvironment(Map<String, String> builder) {
     }
 
     /**
@@ -204,6 +205,18 @@ public final class BuildConfiguration implements BuildEvent {
      */
     public boolean compatibleWithStrategy(String strategyName) {
       return true;
+    }
+
+    /**
+     * Returns the transition that produces the "artifact owner" for this configuration, or null
+     * if this configuration is its own owner.
+     *
+     * <p>If multiple fragments return the same transition, that transition is only applied
+     * once. Multiple fragments may not return different non-null transitions.
+     */
+    @Nullable
+    public PatchTransition getArtifactOwnerTransition() {
+      return null;
     }
 
     /**
@@ -430,59 +443,6 @@ public final class BuildConfiguration implements BuildEvent {
   }
 
   /**
-   * Converter to auto-detect the cpu of the machine on which Bazel runs.
-   *
-   * <p>If the compilation happens remotely then the cpu of the remote machine might be different
-   * from the auto-detected one and the --cpu and --host_cpu options must be set explicitly.
-   */
-  public static class AutoCpuConverter implements Converter<String> {
-    @Override
-    public String convert(String input) throws OptionsParsingException {
-      if (input.isEmpty()) {
-        // TODO(philwo) - replace these deprecated names with more logical ones (e.g. k8 becomes
-        // linux-x86_64, darwin includes the CPU architecture, ...).
-        switch (OS.getCurrent()) {
-          case DARWIN:
-            return "darwin";
-          case FREEBSD:
-            return "freebsd";
-          case WINDOWS:
-            switch (CPU.getCurrent()) {
-              case X86_64:
-                return "x64_windows";
-              default:
-                // We only support x64 Windows for now.
-                return "unknown";
-            }
-          case LINUX:
-            switch (CPU.getCurrent()) {
-              case X86_32:
-                return "piii";
-              case X86_64:
-                return "k8";
-              case PPC:
-                return "ppc";
-              case ARM:
-                return "arm";
-              case S390X:
-                return "s390x";
-              default:
-                return "unknown";
-            }
-          default:
-            return "unknown";
-        }
-      }
-      return input;
-    }
-
-    @Override
-    public String getTypeDescription() {
-      return "a string";
-    }
-  }
-
-  /**
    * Options that affect the value of a BuildConfiguration instance.
    *
    * <p>(Note: any client that creates a view will also need to declare
@@ -577,7 +537,7 @@ public final class BuildConfiguration implements BuildEvent {
     // used only for building plugins.
     @Option(
       name = "plugin",
-      converter = LabelConverter.class,
+      converter = LabelListConverter.class,
       allowMultiple = true,
       defaultValue = "",
       category = "flags",
@@ -671,7 +631,6 @@ public final class BuildConfiguration implements BuildEvent {
     // TODO(bazel-team): The test environment is actually computed in BlazeRuntime and this option
     // is not read anywhere else. Thus, it should be in a different options class, preferably one
     // specific to the "test" command or maybe in its own configuration fragment.
-    // BlazeRuntime, though.
     @Option(
       name = "test_env",
       converter = Converters.OptionalAssignmentConverter.class,
@@ -957,7 +916,7 @@ public final class BuildConfiguration implements BuildEvent {
       allowMultiple = true,
       defaultValue = "",
       category = "experimental",
-      converter = LabelConverter.class,
+      converter = LabelListConverter.class,
       help = "Use action_listener to attach an extra_action to existing build actions."
     )
     public List<Label> actionListeners;
@@ -999,7 +958,7 @@ public final class BuildConfiguration implements BuildEvent {
 
     @Option(
       name = "target_environment",
-      converter = LabelConverter.class,
+      converter = LabelListConverter.class,
       allowMultiple = true,
       defaultValue = "",
       category = "flags",
@@ -1040,7 +999,7 @@ public final class BuildConfiguration implements BuildEvent {
 
     @Option(
       name = "experimental_dynamic_configs",
-      defaultValue = "notrim_partial",
+      defaultValue = "notrim",
       optionUsageRestrictions = OptionUsageRestrictions.UNDOCUMENTED,
       converter = DynamicConfigsConverter.class,
       help =
@@ -1255,15 +1214,29 @@ public final class BuildConfiguration implements BuildEvent {
    */
   private final ImmutableMap<String, String> globalMakeEnv;
 
-  private final ImmutableMap<String, String> localShellEnvironment;
-  private final ImmutableSet<String> envVariables;
+  // The action and test environments each consist of two parts. The first part are all the
+  // environment variables with a fixed value, and is stored in a map. The second part are all the
+  // environment variables inherited from the client environment, and is stored in a set. The second
+  // part is resolved as part of action execution - they are declared in the Action interface, and
+  // the SkyframeExecutor adds dependency edges from the actions to nodes corresponding to the
+  // individual client env variables, which ensures correct invalidation when the client env
+  // changes.
+  // Care needs to be taken that the two sets don't overlap - the order in which the two parts are
+  // combined later is undefined.
+  // TODO(ulfjack): Consider adding a wrapper class to construct and contain the two parts, and also
+  // handle case independence on certain platforms.
+  private final ImmutableMap<String, String> actionEnv;
+  private final ImmutableSet<String> inheritedActionEnvVars;
+
+  private final ImmutableMap<String, String> testEnv;
+  private final ImmutableSet<String> inheritedTestEnvVars;
+
   private final BuildOptions buildOptions;
   private final Options options;
 
   private final String mnemonic;
   private final String platformName;
 
-  private final ImmutableMap<String, String> testEnvironment;
   private final ImmutableMap<String, String> commandLineBuildVariables;
 
   private final int hashCode; // We can precompute the hash code as all its inputs are immutable.
@@ -1406,28 +1379,48 @@ public final class BuildConfiguration implements BuildEvent {
    * statically set environment variables with their values and the set of environment variables to
    * be inherited from the client environment.
    */
-  private Pair<ImmutableMap<String, String>, ImmutableSet<String>> setupShellEnvironment() {
-    ImmutableMap.Builder<String, String> builder = new ImmutableMap.Builder<>();
+  private Pair<ImmutableMap<String, String>, ImmutableSet<String>> setupActionEnvironment() {
+    // We make a copy first to remove duplicate entries; last one wins.
+    Map<String, String> actionEnv = new HashMap<>();
+    // TODO(ulfjack): Remove all env variables from configuration fragments.
     for (Fragment fragment : fragments.values()) {
-      fragment.setupShellEnvironment(builder);
+      fragment.setupActionEnvironment(actionEnv);
     }
     // Shell environment variables specified via options take precedence over the
     // ones inherited from the fragments. In the long run, these fragments will
     // be replaced by appropriate default rc files anyway.
-    Map<String, String> shellEnv = new TreeMap<>(builder.build());
     for (Map.Entry<String, String> entry : options.actionEnvironment) {
-      shellEnv.put(entry.getKey(), entry.getValue());
+      actionEnv.put(entry.getKey(), entry.getValue());
     }
-    Map<String, String> fixedShellEnv = new TreeMap<>(shellEnv);
-    Set<String> variableShellEnv = new HashSet<>();
-    for (Map.Entry<String, String> entry : shellEnv.entrySet()) {
-      if (entry.getValue() == null) {
+    return split(actionEnv);
+  }
+
+  /**
+   * Compute the test environment, which, at configuration level, is a pair consisting of the
+   * statically set environment variables with their values and the set of environment variables to
+   * be inherited from the client environment.
+   */
+  private Pair<ImmutableMap<String, String>, ImmutableSet<String>> setupTestEnvironment() {
+    // We make a copy first to remove duplicate entries; last one wins.
+    Map<String, String> testEnv = new HashMap<>();
+    for (Map.Entry<String, String> entry : options.testEnvironment) {
+      testEnv.put(entry.getKey(), entry.getValue());
+    }
+    return split(testEnv);
+  }
+
+  private Pair<ImmutableMap<String, String>, ImmutableSet<String>> split(Map<String, String> env) {
+    Map<String, String> fixedEnv = new TreeMap<>();
+    Set<String> variableEnv = new TreeSet<>();
+    for (Map.Entry<String, String> entry : env.entrySet()) {
+      if (entry.getValue() != null) {
+        fixedEnv.put(entry.getKey(), entry.getValue());
+      } else {
         String key = entry.getKey();
-        fixedShellEnv.remove(key);
-        variableShellEnv.add(key);
+        variableEnv.add(key);
       }
     }
-    return Pair.of(ImmutableMap.copyOf(fixedShellEnv), ImmutableSet.copyOf(variableShellEnv));
+    return Pair.of(ImmutableMap.copyOf(fixedEnv), ImmutableSet.copyOf(variableEnv));
   }
 
   /**
@@ -1458,15 +1451,6 @@ public final class BuildConfiguration implements BuildEvent {
     this.actionsEnabled = buildOptions.enableActions();
     this.options = buildOptions.get(Options.class);
     this.mainRepositoryName = RepositoryName.createFromValidStrippedName(repositoryName);
-
-    Map<String, String> testEnv = new TreeMap<>();
-    for (Map.Entry<String, String> entry : this.options.testEnvironment) {
-      if (entry.getValue() != null) {
-        testEnv.put(entry.getKey(), entry.getValue());
-      }
-    }
-
-    this.testEnvironment = ImmutableMap.copyOf(testEnv);
 
     // We can't use an ImmutableMap.Builder here; we need the ability to add entries with keys that
     // are already in the map so that the same define can be specified on the command line twice,
@@ -1507,10 +1491,13 @@ public final class BuildConfiguration implements BuildEvent {
 
     this.shellExecutable = computeShellExecutable();
 
-    Pair<ImmutableMap<String, String>, ImmutableSet<String>> shellEnvironment =
-        setupShellEnvironment();
-    this.localShellEnvironment = shellEnvironment.getFirst();
-    this.envVariables = shellEnvironment.getSecond();
+    Pair<ImmutableMap<String, String>, ImmutableSet<String>> actionEnvs = setupActionEnvironment();
+    this.actionEnv = actionEnvs.getFirst();
+    this.inheritedActionEnvVars = actionEnvs.getSecond();
+
+    Pair<ImmutableMap<String, String>, ImmutableSet<String>> testEnvs = setupTestEnvironment();
+    this.testEnv = testEnvs.getFirst();
+    this.inheritedTestEnvVars = testEnvs.getSecond();
 
     this.transitiveOptionDetails = computeOptionsMap(buildOptions, fragments.values());
 
@@ -1997,16 +1984,21 @@ public final class BuildConfiguration implements BuildEvent {
           if (currentTransition == ConfigurationTransition.NONE) {
             currentTransition = ruleClassTransition;
           } else {
-            currentTransition = new ComposingSplitTransition(ruleClassTransition,
-                currentTransition);
+            currentTransition = new ComposingSplitTransition(currentTransition,
+                ruleClassTransition);
           }
         }
       }
 
-      // We don't support rule class configurators (which may need intermediate configurations to
-      // apply). The only current use of that is LIPO, which can't currently be invoked with dynamic
-      // configurations (e.g. this code can never get called for LIPO builds). So check that
-      // if there is a configurator, it's for LIPO, in which case we can ignore it.
+      /**
+       * Dynamic configurations don't support rule class configurators (which may need intermediate
+       * configurations to apply). The only current use of that is LIPO, which dynamic
+       * configurations have a different code path for:
+       * {@link com.google.devtools.build.lib.rules.cpp.CppRuleClasses.LIPO_ON_DEMAND}.
+       *
+       * So just check that if there is a configurator, it's for LIPO, in which case we can ignore
+       * it.
+       */
       if (associatedRule != null) {
         @SuppressWarnings("unchecked")
         RuleClass.Configurator<?, ?> func =
@@ -2288,7 +2280,7 @@ public final class BuildConfiguration implements BuildEvent {
    * here as a map.
    */
   public ImmutableMap<String, String> getLocalShellEnvironment() {
-    return localShellEnvironment;
+    return actionEnv;
   }
 
   /**
@@ -2306,7 +2298,7 @@ public final class BuildConfiguration implements BuildEvent {
    * client environment.)
    */
   public ImmutableSet<String> getVariableShellEnvironment() {
-    return envVariables;
+    return inheritedActionEnvVars;
   }
 
   /**
@@ -2464,7 +2456,11 @@ public final class BuildConfiguration implements BuildEvent {
             + "as set by the --test_env options."
   )
   public ImmutableMap<String, String> getTestEnv() {
-    return testEnvironment;
+    return testEnv;
+  }
+
+  public ImmutableSet<String> getInheritedTestEnv() {
+    return inheritedTestEnvVars;
   }
 
   public TriState cacheTestResults() {
@@ -2646,15 +2642,38 @@ public final class BuildConfiguration implements BuildEvent {
   }
 
   /**
+   * Returns the transition that produces the "artifact owner" for this configuration, or null
+   * if this configuration is its own owner.
+   *
+   * <p>This is the dynamic configuration version of {@link #getArtifactOwnerConfiguration}.
+   */
+  @Nullable
+  public PatchTransition getArtifactOwnerTransition() {
+    Preconditions.checkState(useDynamicConfigurations());
+    PatchTransition ownerTransition = null;
+    for (Fragment fragment : fragments.values()) {
+      PatchTransition fragmentTransition = fragment.getArtifactOwnerTransition();
+      if (fragmentTransition != null) {
+        if (ownerTransition != null) {
+          Verify.verify(ownerTransition == fragmentTransition,
+              String.format(
+                  "cannot determine owner transition: fragments returning both %s and %s",
+                  ownerTransition.toString(), fragmentTransition.toString()));
+        }
+        ownerTransition = fragmentTransition;
+      }
+    }
+    return ownerTransition;
+  }
+
+  /**
    * See {@code BuildConfigurationCollection.Transitions.getArtifactOwnerConfiguration()}.
+   *
+   * <p>This is the static configuration version of {@link #getArtifactOwnerTransition}.
    */
   public BuildConfiguration getArtifactOwnerConfiguration() {
-    // Dynamic configurations inherit transitions objects from other configurations exclusively
-    // for use of Transitions.getDynamicTransition. No other calls to transitions should be
-    // made for dynamic configurations.
-    // TODO(bazel-team): enforce the above automatically (without having to explicitly check
-    // for dynamic configuration mode).
-    return useDynamicConfigurations() ? this : transitions.getArtifactOwnerConfiguration();
+    Preconditions.checkState(!useDynamicConfigurations());
+    return transitions.getArtifactOwnerConfiguration();
   }
 
   /**

@@ -495,6 +495,23 @@ public class SkylarkRuleContextTest extends SkylarkTestCase {
   }
 
   @Test
+  public void existingRuleWithSelect() throws Exception {
+    scratch.file(
+        "test/existing_rule.bzl",
+        "def macro():",
+        "  s = select({'//foo': ['//bar']})",
+        "  native.cc_library(name = 'x', srcs = s)",
+        "  print(native.existing_rule('x')['srcs'])");
+    scratch.file(
+        "test/BUILD",
+        "load('//test:existing_rule.bzl', 'macro')",
+        "macro()",
+        "cc_library(name = 'a', srcs = [])");
+    getConfiguredTarget("//test:a");
+    assertContainsEvent("selector({\"//foo:foo\": [\"//bar:bar\"]})");
+  }
+
+  @Test
   public void testGetRule() throws Exception {
     scratch.file("test/skylark/BUILD");
     scratch.file(
@@ -815,6 +832,37 @@ public class SkylarkRuleContextTest extends SkylarkTestCase {
         "load('//:my_rule.bzl', 'my_rule')",
         "my_rule(name='r',",
         "        label_dict={':dep': 'value'})");
+
+    invalidatePackages();
+    SkylarkRuleContext context = createRuleContext("//:r");
+    Label keyLabel =
+        (Label) evalRuleContextCode(context, "ruleContext.attr.label_dict.keys()[0].label");
+    assertThat(keyLabel).isEqualTo(Label.parseAbsolute("//:dep"));
+    String valueString =
+        (String) evalRuleContextCode(context, "ruleContext.attr.label_dict.values()[0]");
+    assertThat(valueString).isEqualTo("value");
+  }
+
+  @Test
+  public void testLabelKeyedStringDictTranslatesAliases() throws Exception {
+    scratch.file(
+        "my_rule.bzl",
+        "def _impl(ctx):",
+        "  return",
+        "my_rule = rule(",
+        "  implementation = _impl,",
+        "  attrs = {",
+        "    'label_dict': attr.label_keyed_string_dict(),",
+        "  }",
+        ")");
+
+    scratch.file(
+        "BUILD",
+        "filegroup(name='dep')",
+        "alias(name='alias', actual='dep')",
+        "load('//:my_rule.bzl', 'my_rule')",
+        "my_rule(name='r',",
+        "        label_dict={':alias': 'value'})");
 
     invalidatePackages();
     SkylarkRuleContext context = createRuleContext("//:r");

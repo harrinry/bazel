@@ -14,7 +14,6 @@
 package com.google.devtools.build.lib.syntax;
 
 import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.assertEquals;
 
 import com.google.common.eventbus.EventBus;
 import com.google.devtools.build.lib.events.Event;
@@ -185,11 +184,17 @@ public class LexerTest {
 
     // octal
     assertThat(values(tokens("012345-"))).isEqualTo("INT(5349) MINUS NEWLINE EOF");
+    assertThat(values(tokens("0o12345-"))).isEqualTo("INT(5349) MINUS NEWLINE EOF");
+    assertThat(values(tokens("0O77"))).isEqualTo("INT(63) NEWLINE EOF");
 
     // octal (bad)
     assertThat(values(tokens("012349-"))).isEqualTo("INT(0) MINUS NEWLINE EOF");
     assertThat(lastError.toString())
         .isEqualTo("/some/path.txt:1: invalid base-8 integer constant: 012349");
+
+    assertThat(values(tokens("0o"))).isEqualTo("INT(0) NEWLINE EOF");
+    assertThat(lastError.toString())
+        .isEqualTo("/some/path.txt:1: invalid base-8 integer constant: 0o");
 
     // hexadecimal (uppercase)
     assertThat(values(tokens("0X12345F-"))).isEqualTo("INT(1193055) MINUS NEWLINE EOF");
@@ -421,11 +426,11 @@ public class LexerTest {
 
   @Test
   public void testTokenPositions() throws Exception {
-    //            foo   (     bar   ,     {      1       :
-    assertEquals("[0,3) [3,4) [4,7) [7,8) [9,10) [10,11) [11,12)"
-             //      'quux'  }       )       NEWLINE EOF
-                 + " [13,19) [19,20) [20,21) [20,21) [21,21)",
-                 positions(tokens("foo(bar, {1: 'quux'})")));
+    assertThat(positions(tokens("foo(bar, {1: 'quux'})"))).isEqualTo(
+    //   foo   (     bar   ,     {      1       :
+        "[0,3) [3,4) [4,7) [7,8) [9,10) [10,11) [11,12)"
+    //      'quux'  }       )       NEWLINE EOF
+        + " [13,19) [19,20) [20,21) [20,21) [21,21)");
   }
 
   @Test

@@ -404,7 +404,7 @@ public final class SkylarkRuleContext implements SkylarkValue {
         List<? extends TransitiveInfoCollection> allPrereq =
             ruleContext.getPrerequisites(a.getName(), Mode.DONT_CHECK);
         for (TransitiveInfoCollection prereq : allPrereq) {
-          builder.put(prereq, original.get(prereq.getLabel()));
+          builder.put(prereq, original.get(AliasProvider.getDependencyLabel(prereq)));
         }
         attrBuilder.put(skyname, SkylarkType.convertToSkylark(builder.build(), null));
       } else if (type == BuildType.LABEL_DICT_UNARY) {
@@ -985,7 +985,8 @@ public final class SkylarkRuleContext implements SkylarkValue {
   }
 
   @SkylarkCallable(doc =
-        "Returns a string after expanding all references to \"Make variables\". The variables "
+        "<b>Deprecated.</b> Use <code>ctx.var</code> to access the variables instead.<br>"
+      + "Returns a string after expanding all references to \"Make variables\". The variables "
       + "must have the following format: <code>$(VAR_NAME)</code>. Also, <code>$$VAR_NAME"
       + "</code> expands to <code>$VAR_NAME</code>. Parameters:"
       + "<ul><li>The name of the attribute (<code>string</code>). It's only used for error "

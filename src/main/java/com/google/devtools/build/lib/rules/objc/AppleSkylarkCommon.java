@@ -165,6 +165,17 @@ public class AppleSkylarkCommon {
   }
 
   @SkylarkCallable(
+      name = AppleStaticLibraryProvider.SKYLARK_NAME,
+      doc =
+          "Returns the provider constructor for AppleStaticLibrary. If a target propagates "
+              + "the AppleStaticLibrary provider, use this as the key with which to retrieve it.",
+      structField = true
+    )
+    public ClassObjectConstructor getAppleStaticLibraryProvider() {
+      return AppleStaticLibraryProvider.SKYLARK_CONSTRUCTOR;
+    }
+
+  @SkylarkCallable(
     name = AppleDebugOutputsProvider.SKYLARK_NAME,
     doc =
         "Returns the provider constructor for AppleDebugOutputsProvider. If a target propagates "
@@ -191,8 +202,9 @@ public class AppleSkylarkCommon {
   @SkylarkCallable(
     name = IosDeviceProvider.SKYLARK_NAME,
     doc =
-        "Returns the provider constructor for IosDeviceProvider. Use this as a key to access the "
-            + "attributes exposed by ios_device.",
+        "[NOTE: This is deprecated and will be removed in the future. Use the new Skylark testing "
+            + "rules instead.] Returns the provider constructor for IosDeviceProvider. Use this as "
+            + "a key to access the attributes exposed by ios_device.",
     structField = true
   )
   public ClassObjectConstructor getIosDeviceProviderConstructor() {

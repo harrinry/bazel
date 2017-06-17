@@ -143,7 +143,6 @@ filegroup(
         "//src/main/protobuf:srcs",
         "//src/java_tools/buildjar:JavaBuilderDeploy",
         "//src/java_tools/buildjar:VanillaJavaBuilder_deploy.jar",
-        "//src/java_tools/singlejar:SingleJar_deploy.jar",
         "//src/java_tools/buildjar/java/com/google/devtools/build/buildjar/genclass:GenClass_deploy.jar",
         "//src/java_tools/junitrunner/java/com/google/testing/junit/runner:Runner_deploy.jar",
         "//src/java_tools/junitrunner/java/com/google/testing/junit/runner:ExperimentalRunner_deploy.jar",
@@ -162,6 +161,21 @@ filegroup(
         "//conditions:default": [
             ":dummy_darwin_tools",
             "//third_party/ijar:zipper",
+        ],
+    }) + select({
+        # TODO(bazel-team): Once https://github.com/bazelbuild/bazel/issues/2241
+        # is resolved, use cc implementation of singlejar on windows
+        ":windows": [
+            "//src/java_tools/singlejar:SingleJar_deploy.jar",
+        ],
+        ":windows_msys": [
+            "//src/java_tools/singlejar:SingleJar_deploy.jar",
+        ],
+        ":windows_msvc": [
+            "//src/java_tools/singlejar:SingleJar_deploy.jar",
+        ],
+        "//conditions:default": [
+            "//src/tools/singlejar:singlejar",
         ],
     }) + select({
         "//tools/jdk:jdk7": [],
@@ -350,6 +364,7 @@ filegroup(
         "//src/test/java/com/google/devtools/build/lib:srcs",
         "//src/test/java/com/google/devtools/build/skyframe:srcs",
         "//src/test/java/com/google/devtools/common/options:srcs",
+        "//src/test/py/bazel:srcs",
         "//src/test/shell:srcs",
         "//src/tools/android/java/com/google/devtools/build/android:srcs",
         "//src/tools/benchmark:srcs",
@@ -374,6 +389,7 @@ genrule(
     srcs = [
         "//src/main/protobuf:dist_jars",
         "//src/main/java/com/google/devtools/build/lib/buildeventstream/proto:dist_jars",
+        "@googleapis//:dist_jars",
     ],
     outs = ["derived_java_srcs.zip"],
     cmd = "$(location :combine_derived_java_srcs.sh) $@ $(SRCS)",

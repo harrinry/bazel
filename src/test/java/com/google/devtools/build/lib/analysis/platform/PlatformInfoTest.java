@@ -19,7 +19,6 @@ import static com.google.common.truth.Truth.assertThat;
 import com.google.common.testing.EqualsTester;
 import com.google.devtools.build.lib.analysis.ConfiguredTarget;
 import com.google.devtools.build.lib.analysis.util.BuildViewTestCase;
-import com.google.devtools.build.lib.rules.platform.Platform;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
@@ -74,19 +73,42 @@ public class PlatformInfoTest extends BuildViewTestCase {
     new EqualsTester()
         .addEqualityGroup(
             // Base case.
-            PlatformInfo.builder().addConstraint(value1).addConstraint(value2).build(),
-            PlatformInfo.builder().addConstraint(value1).addConstraint(value2).build(),
             PlatformInfo.builder()
+                .setLabel(makeLabel("//platform/plat1"))
+                .addConstraint(value1)
+                .addConstraint(value2)
+                .build(),
+            PlatformInfo.builder()
+                .setLabel(makeLabel("//platform/plat1"))
+                .addConstraint(value1)
+                .addConstraint(value2)
+                .build(),
+            PlatformInfo.builder()
+                .setLabel(makeLabel("//platform/plat1"))
                 .addConstraint(value1)
                 .addConstraint(value2)
                 .addRemoteExecutionProperty("key", "val") // execution properties are ignored.
                 .build())
         .addEqualityGroup(
+            // Different label.
+            PlatformInfo.builder()
+                .setLabel(makeLabel("//platform/plat2"))
+                .addConstraint(value1)
+                .addConstraint(value2)
+                .build())
+        .addEqualityGroup(
             // Extra constraint.
-            PlatformInfo.builder().addConstraint(value1).addConstraint(value3).build())
+            PlatformInfo.builder()
+                .setLabel(makeLabel("//platform/plat1"))
+                .addConstraint(value1)
+                .addConstraint(value3)
+                .build())
         .addEqualityGroup(
             // Missing constraint.
-            PlatformInfo.builder().addConstraint(value1).build())
+            PlatformInfo.builder()
+                .setLabel(makeLabel("//platform/plat1"))
+                .addConstraint(value1)
+                .build())
         .testEquals();
   }
 
@@ -97,7 +119,8 @@ public class PlatformInfoTest extends BuildViewTestCase {
         "def _impl(ctx):",
         "  constraints = [val[platform_common.ConstraintValueInfo] "
             + "for val in ctx.attr.constraints]",
-        "  platform = platform_common.PlatformInfo(constraint_values = constraints)",
+        "  platform = platform_common.PlatformInfo(",
+        "      label = ctx.label, constraint_values = constraints)",
         "  return [platform]",
         "my_platform = rule(",
         "  implementation = _impl,",
@@ -116,8 +139,9 @@ public class PlatformInfoTest extends BuildViewTestCase {
     ConfiguredTarget platform = getConfiguredTarget("//test/platform:custom");
     assertThat(platform).isNotNull();
 
-    PlatformInfo provider = Platform.platform(platform);
+    PlatformInfo provider = PlatformProviderUtils.platform(platform);
     assertThat(provider).isNotNull();
+    assertThat(provider.label()).isEqualTo(makeLabel("//test/platform:custom"));
     assertThat(provider.constraints()).hasSize(1);
     ConstraintSettingInfo constraintSetting =
         ConstraintSettingInfo.create(makeLabel("//constraint:basic"));

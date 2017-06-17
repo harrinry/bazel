@@ -52,6 +52,7 @@ import com.google.devtools.build.lib.collect.ImmutableSortedKeyListMultimap;
 import com.google.devtools.build.lib.collect.nestedset.NestedSet;
 import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
 import com.google.devtools.build.lib.events.Event;
+import com.google.devtools.build.lib.events.ExtendedEventHandler.Postable;
 import com.google.devtools.build.lib.events.Location;
 import com.google.devtools.build.lib.packages.AspectDescriptor;
 import com.google.devtools.build.lib.packages.Attribute;
@@ -1760,6 +1761,12 @@ public final class RuleContext extends TargetContext
         if (attribute == null) {
           continue;
         }
+
+        if (attribute.isSingleArtifact() && entry.getValue().size() > 1) {
+          attributeError(attribute.getName(), "must contain a single dependency");
+          continue;
+        }
+
         if (attribute.isSilentRuleClassFilter()) {
           Predicate<RuleClass> filter = attribute.getAllowedRuleClassesPredicate();
           for (ConfiguredTarget configuredTarget : entry.getValue()) {
@@ -1778,6 +1785,10 @@ public final class RuleContext extends TargetContext
         }
       }
       return mapBuilder.build();
+    }
+
+    public void post(Postable event) {
+      reporter.post(event);
     }
 
     public void reportError(Location location, String message) {
@@ -2125,6 +2136,10 @@ public final class RuleContext extends TargetContext
 
     public void reportError(Location location, String message) {
       env.getEventHandler().handle(Event.error(location, message));
+    }
+
+    public void post(Postable event) {
+      env.getEventHandler().post(event);
     }
 
     @Override

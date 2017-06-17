@@ -91,7 +91,6 @@ import com.google.devtools.build.lib.events.Event;
 import com.google.devtools.build.lib.events.ExtendedEventHandler;
 import com.google.devtools.build.lib.events.StoredEventHandler;
 import com.google.devtools.build.lib.exec.ExecutionOptions;
-import com.google.devtools.build.lib.flags.InvocationPolicyEnforcer;
 import com.google.devtools.build.lib.packages.AspectClass;
 import com.google.devtools.build.lib.packages.AspectDescriptor;
 import com.google.devtools.build.lib.packages.AspectParameters;
@@ -124,8 +123,6 @@ import com.google.devtools.build.lib.skyframe.AspectValue;
 import com.google.devtools.build.lib.skyframe.ConfiguredTargetKey;
 import com.google.devtools.build.lib.skyframe.DiffAwareness;
 import com.google.devtools.build.lib.skyframe.LegacyLoadingPhaseRunner;
-import com.google.devtools.build.lib.skyframe.PackageLookupFunction.CrossRepositoryLabelViolationStrategy;
-import com.google.devtools.build.lib.skyframe.PackageLookupValue.BuildFileName;
 import com.google.devtools.build.lib.skyframe.PrecomputedValue;
 import com.google.devtools.build.lib.skyframe.SequencedSkyframeExecutor;
 import com.google.devtools.build.lib.skyframe.SkyValueDirtinessChecker;
@@ -142,6 +139,7 @@ import com.google.devtools.build.lib.vfs.ModifiedFileSet;
 import com.google.devtools.build.lib.vfs.Path;
 import com.google.devtools.build.lib.vfs.PathFragment;
 import com.google.devtools.build.skyframe.SkyFunction;
+import com.google.devtools.common.options.InvocationPolicyEnforcer;
 import com.google.devtools.common.options.Options;
 import com.google.devtools.common.options.OptionsParser;
 import java.io.ByteArrayOutputStream;
@@ -225,7 +223,7 @@ public abstract class BuildViewTestCase extends FoundationTestCase {
             .build(ruleClassProvider, scratch.getFileSystem());
     tsgm = new TimestampGranularityMonitor(BlazeClock.instance());
     skyframeExecutor =
-        SequencedSkyframeExecutor.create(
+        SequencedSkyframeExecutor.createForTesting(
             pkgFactory,
             directories,
             binTools,
@@ -236,9 +234,7 @@ public abstract class BuildViewTestCase extends FoundationTestCase {
             analysisMock.getSkyFunctions(),
             getPrecomputedValues(),
             ImmutableList.<SkyValueDirtinessChecker>of(),
-            analysisMock.getProductName(),
-            CrossRepositoryLabelViolationStrategy.ERROR,
-            ImmutableList.of(BuildFileName.BUILD_DOT_BAZEL, BuildFileName.BUILD));
+            analysisMock.getProductName());
     skyframeExecutor.injectExtraPrecomputedValues(extraPrecomputedValues);
     packageCacheOptions.defaultVisibility = ConstantRuleVisibility.PUBLIC;
     packageCacheOptions.showLoadingProgress = true;
@@ -1465,12 +1461,8 @@ public abstract class BuildViewTestCase extends FoundationTestCase {
     return Iterables.getOnlyElement(masterConfig.getTargetConfigurations());
   }
 
-  protected BuildConfiguration getDataConfiguration() {
-    BuildConfiguration targetConfig = getTargetConfiguration();
-    // TODO(bazel-team): do a proper data transition for dynamic configurations.
-    return targetConfig.useDynamicConfigurations()
-        ? targetConfig
-        : targetConfig.getConfiguration(ConfigurationTransition.DATA);
+  protected BuildConfiguration getDataConfiguration() throws InterruptedException {
+    return getConfiguration(getTargetConfiguration(), ConfigurationTransition.DATA);
   }
 
   protected BuildConfiguration getHostConfiguration() {
@@ -1500,7 +1492,6 @@ public abstract class BuildViewTestCase extends FoundationTestCase {
 
   /**
    * Returns an attribute value retriever for the given rule for the target configuration.
-
    */
   protected AttributeMap attributes(RuleConfiguredTarget ct) {
     return ConfiguredAttributeMapper.of(ct);

@@ -31,15 +31,12 @@ import com.google.devtools.build.lib.analysis.config.ConfigurationFactory;
 import com.google.devtools.build.lib.analysis.config.FragmentOptions;
 import com.google.devtools.build.lib.analysis.config.InvalidConfigurationException;
 import com.google.devtools.build.lib.cmdline.RepositoryName;
-import com.google.devtools.build.lib.flags.InvocationPolicyEnforcer;
 import com.google.devtools.build.lib.packages.PackageFactory;
 import com.google.devtools.build.lib.packages.util.MockToolsConfig;
 import com.google.devtools.build.lib.pkgcache.PackageCacheOptions;
 import com.google.devtools.build.lib.pkgcache.PathPackageLocator;
 import com.google.devtools.build.lib.rules.repository.RepositoryDelegatorFunction;
 import com.google.devtools.build.lib.skyframe.DiffAwareness;
-import com.google.devtools.build.lib.skyframe.PackageLookupFunction.CrossRepositoryLabelViolationStrategy;
-import com.google.devtools.build.lib.skyframe.PackageLookupValue.BuildFileName;
 import com.google.devtools.build.lib.skyframe.PrecomputedValue;
 import com.google.devtools.build.lib.skyframe.SequencedSkyframeExecutor;
 import com.google.devtools.build.lib.skyframe.SkyValueDirtinessChecker;
@@ -50,6 +47,7 @@ import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor;
 import com.google.devtools.build.lib.vfs.Path;
 import com.google.devtools.build.lib.vfs.PathFragment;
 import com.google.devtools.common.options.Converters;
+import com.google.devtools.common.options.InvocationPolicyEnforcer;
 import com.google.devtools.common.options.Option;
 import com.google.devtools.common.options.Options;
 import com.google.devtools.common.options.OptionsBase;
@@ -104,7 +102,7 @@ public abstract class ConfigurationTestCase extends FoundationTestCase {
         new AnalysisTestUtil.DummyWorkspaceStatusActionFactory(directories);
 
     skyframeExecutor =
-        SequencedSkyframeExecutor.create(
+        SequencedSkyframeExecutor.createForTesting(
             pkgFactory,
             directories,
             BinTools.forUnitTesting(directories, analysisMock.getEmbeddedTools()),
@@ -115,9 +113,7 @@ public abstract class ConfigurationTestCase extends FoundationTestCase {
             analysisMock.getSkyFunctions(),
             ImmutableList.<PrecomputedValue.Injected>of(),
             ImmutableList.<SkyValueDirtinessChecker>of(),
-            analysisMock.getProductName(),
-            CrossRepositoryLabelViolationStrategy.ERROR,
-            ImmutableList.of(BuildFileName.BUILD_DOT_BAZEL, BuildFileName.BUILD));
+            analysisMock.getProductName());
     skyframeExecutor.injectExtraPrecomputedValues(ImmutableList.of(PrecomputedValue.injected(
         RepositoryDelegatorFunction.REPOSITORY_OVERRIDES,
         ImmutableMap.<RepositoryName, PathFragment>of())));

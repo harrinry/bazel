@@ -19,6 +19,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.devtools.build.lib.analysis.ConfigurationCollectionFactory;
 import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
+import com.google.devtools.build.lib.analysis.PlatformConfigurationLoader;
 import com.google.devtools.build.lib.analysis.config.ConfigurationFactory;
 import com.google.devtools.build.lib.analysis.config.ConfigurationFragmentFactory;
 import com.google.devtools.build.lib.analysis.util.AnalysisMock;
@@ -138,7 +139,7 @@ public final class BazelAnalysisMock extends AnalysisMock {
 
     config.create("/bazel_tools_workspace/tools/test/BUILD",
         "filegroup(name = 'runtime', srcs = ['test-setup.sh'],)",
-        "filegroup(name='coverage_support', srcs=['collect_coverage.sh',':LcovMerger_deploy.jar'])",
+        "filegroup(name='coverage_support', srcs=['collect_coverage.sh','LcovMerger'])",
         "filegroup(name = 'coverage_report_generator', srcs = ['coverage_report_generator.sh'])");
 
     config.create(
@@ -270,7 +271,8 @@ public final class BazelAnalysisMock extends AnalysisMock {
         new J2ObjcConfiguration.Loader(),
         new ProtoConfiguration.Loader(),
         new ConfigFeatureFlagConfiguration.Loader(),
-        new AndroidConfiguration.Loader());
+        new AndroidConfiguration.Loader(),
+        new PlatformConfigurationLoader());
   }
 
   @Override

@@ -86,4 +86,36 @@ public class SkylarkSemanticsOptions extends OptionsBase implements Serializable
             + "statement."
   )
   public boolean incompatibleBzlDisallowLoadAfterStatement;
+
+  @Option(
+    name = "incompatible_load_argument_is_label",
+    defaultValue = "false",
+    category = "incompatible changes",
+    help =
+        "If set to true, the first argument of 'load' statements is a label (not a path). "
+            + "It must start with '//' or ':'."
+  )
+  public boolean incompatibleLoadArgumentIsLabel;
+
+  @Option(
+    name = "incompatible_disallow_toplevel_if_statement",
+    defaultValue = "false",
+    category = "incompatible changes",
+    help =
+        "If set to true, 'if' statements are forbidden at the top-level "
+            + "(outside a function definition)"
+  )
+  public boolean incompatibleDisallowToplevelIfStatement;
+
+  @Option(
+    name = "incompatible_comprehension_variables_do_not_leak",
+    defaultValue = "false",
+    category = "incompatible changes",
+    help =
+        "If set to true, loop variables in a comprehension shadow any existing variable by "
+            + "the same name. If the existing variable was declared in the same scope that "
+            + "contains the comprehension, then it also becomes inaccessible after the "
+            + " comprehension executes."
+  )
+  public boolean incompatibleComprehensionVariablesDoNotLeak;
 }

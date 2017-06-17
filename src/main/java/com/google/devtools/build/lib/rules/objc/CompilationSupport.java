@@ -20,7 +20,6 @@ import static com.google.devtools.build.lib.rules.objc.ObjcProvider.DYNAMIC_FRAM
 import static com.google.devtools.build.lib.rules.objc.ObjcProvider.FORCE_LOAD_LIBRARY;
 import static com.google.devtools.build.lib.rules.objc.ObjcProvider.FRAMEWORK_SEARCH_PATH_ONLY;
 import static com.google.devtools.build.lib.rules.objc.ObjcProvider.IMPORTED_LIBRARY;
-import static com.google.devtools.build.lib.rules.objc.ObjcProvider.INCLUDE_SYSTEM;
 import static com.google.devtools.build.lib.rules.objc.ObjcProvider.LIBRARY;
 import static com.google.devtools.build.lib.rules.objc.ObjcProvider.SDK_DYLIB;
 import static com.google.devtools.build.lib.rules.objc.ObjcProvider.SDK_FRAMEWORK;
@@ -65,7 +64,6 @@ import com.google.devtools.build.lib.collect.nestedset.Order;
 import com.google.devtools.build.lib.packages.BuildType;
 import com.google.devtools.build.lib.packages.ImplicitOutputsFunction.SafeImplicitOutputsFunction;
 import com.google.devtools.build.lib.packages.RuleClass.ConfiguredTargetFactory.RuleErrorException;
-import com.google.devtools.build.lib.packages.TargetUtils;
 import com.google.devtools.build.lib.rules.apple.AppleConfiguration;
 import com.google.devtools.build.lib.rules.apple.AppleToolchain;
 import com.google.devtools.build.lib.rules.apple.Platform;
@@ -181,14 +179,6 @@ public abstract class CompilationSupport {
                   HEADERS))
           .withSourceAttributes("srcs", "non_arc_srcs", "hdrs")
           .withDependencyAttributes("deps", "data", "binary", "xctest_app");
-  
-  private static final Predicate<String> INCLUDE_DIR_OPTION_IN_COPTS =
-      new Predicate<String>() {
-        @Override
-        public boolean apply(String copt) {
-          return copt.startsWith("-I") && copt.length() > 2;
-        }
-      };
 
   /**
    * Defines a library that contains the transitive closure of dependencies.
@@ -314,7 +304,7 @@ public abstract class CompilationSupport {
   protected final IntermediateArtifacts intermediateArtifacts;
   protected final boolean useDeps;
   protected final Map<String, NestedSet<Artifact>> outputGroupCollector;
-  protected final CcToolchainProvider toolchain;
+  protected final boolean isTestRule;
 
   /**
    * Creates a new compilation support for the given rule and build configuration.
@@ -336,7 +326,7 @@ public abstract class CompilationSupport {
       CompilationAttributes compilationAttributes,
       boolean useDeps,
       Map<String, NestedSet<Artifact>> outputGroupCollector,
-      CcToolchainProvider toolchain) {
+      boolean isTestRule) {
     this.ruleContext = ruleContext;
     this.buildConfiguration = buildConfiguration;
     this.objcConfiguration = buildConfiguration.getFragment(ObjcConfiguration.class);
@@ -344,19 +334,8 @@ public abstract class CompilationSupport {
     this.attributes = compilationAttributes;
     this.intermediateArtifacts = intermediateArtifacts;
     this.useDeps = useDeps;
+    this.isTestRule = isTestRule;
     this.outputGroupCollector = outputGroupCollector;
-    // TODO(b/62143697): Remove this check once all rules are using the crosstool support.
-    if (ruleContext
-        .attributes()
-        .has(CcToolchain.CC_TOOLCHAIN_DEFAULT_ATTRIBUTE_NAME, BuildType.LABEL)) {
-      if (toolchain == null) {
-        toolchain =  CppHelper.getToolchainUsingDefaultCcToolchainAttribute(ruleContext);
-      }
-      this.toolchain = toolchain;
-    } else {
-      // Since the rule context doesn't have a toolchain at all, ignore any provided override.
-      this.toolchain = null;
-    }
   }
 
   /** Builder for {@link CompilationSupport} */
@@ -368,7 +347,7 @@ public abstract class CompilationSupport {
     private boolean useDeps = true;
     private Map<String, NestedSet<Artifact>> outputGroupCollector;
     private boolean isObjcLibrary = false;
-    private CcToolchainProvider toolchain;
+    private boolean isTestRule = false;
 
     /** Sets the {@link RuleContext} for the calling target. */
     public Builder setRuleContext(RuleContext ruleContext) {
@@ -407,8 +386,16 @@ public abstract class CompilationSupport {
      * Indicates that this CompilationSupport is for use in an objc_library target. This will cause
      * CrosstoolCompilationSupport to be used if --experimental_objc_crosstool=library
      */
-    public Builder isObjcLibrary() {
+    public Builder setIsObjcLibrary() {
       this.isObjcLibrary = true;
+      return this;
+    }
+
+    /**
+     * Indicates that this CompilationSupport is for use in a test rule.
+     */
+    public Builder setIsTestRule() {
+      this.isTestRule = true;
       return this;
     }
 
@@ -422,17 +409,6 @@ public abstract class CompilationSupport {
      */
     public Builder setOutputGroupCollector(Map<String, NestedSet<Artifact>> outputGroupCollector) {
       this.outputGroupCollector = outputGroupCollector;
-      return this;
-    }
-
-    /**
-     * Sets {@link CcToolchainProvider} for the calling target.
-     *
-     * <p>This is needed if it can't correctly be inferred directly from the rule context. Setting
-     * to null causes the default to be used as if this was never called.
-     */
-    public Builder setToolchainProvider(CcToolchainProvider toolchain) {
-      this.toolchain = toolchain;
       return this;
     }
 
@@ -472,7 +448,7 @@ public abstract class CompilationSupport {
             compilationAttributes,
             useDeps,
             outputGroupCollector,
-            toolchain);
+            isTestRule);
       } else {
         return new LegacyCompilationSupport(
             ruleContext,
@@ -481,7 +457,7 @@ public abstract class CompilationSupport {
             compilationAttributes,
             useDeps,
             outputGroupCollector,
-            toolchain);
+            isTestRule);
       }
     }
   }
@@ -502,7 +478,7 @@ public abstract class CompilationSupport {
         objcProvider,
         ExtraCompileArgs.NONE,
         ImmutableList.<PathFragment>of(),
-        toolchain,
+        maybeGetCcToolchain(),
         maybeGetFdoSupport());
   }
 
@@ -583,7 +559,7 @@ public abstract class CompilationSupport {
     return registerFullyLinkAction(
         objcProvider,
         outputArchive,
-        toolchain,
+        maybeGetCcToolchain(),
         maybeGetFdoSupport());
   }
 
@@ -641,7 +617,7 @@ public abstract class CompilationSupport {
         objcProvider,
         inputArtifacts,
         outputArchive,
-        toolchain,
+        maybeGetCcToolchain(),
         maybeGetFdoSupport());
   }
     
@@ -670,7 +646,7 @@ public abstract class CompilationSupport {
         getGcovForObjectiveCIfNeeded(),
         // The COVERAGE_GCOV_PATH environment variable is added in TestSupport#getExtraProviders()
         NestedSetBuilder.<Pair<String, String>>emptySet(Order.COMPILE_ORDER),
-        !TargetUtils.isTestRule(ruleContext.getTarget()));
+        !isTestRule);
   }
 
   /**
@@ -735,52 +711,6 @@ public abstract class CompilationSupport {
   }
 
   /**
-   * Sets compilation-related Xcode project information on the given provider builder.
-   *
-   * @param common common information about this rule's attributes and its dependencies
-   * @return this compilation support
-   */
-  CompilationSupport addXcodeSettings(
-      XcodeProvider.Builder xcodeProviderBuilder, ObjcCommon common) {
-    for (CompilationArtifacts artifacts : common.getCompilationArtifacts().asSet()) {
-      xcodeProviderBuilder.setCompilationArtifacts(artifacts);
-    }
-
-    // The include directory options ("-I") are parsed out of copts. The include directories are
-    // added as non-propagated header search paths local to the associated Xcode target.
-    Iterable<String> copts = Iterables.concat(objcConfiguration.getCopts(), attributes.copts());
-    Iterable<String> includeDirOptions = Iterables.filter(copts, INCLUDE_DIR_OPTION_IN_COPTS);
-    Iterable<String> coptsWithoutIncludeDirs = Iterables.filter(
-        copts, Predicates.not(INCLUDE_DIR_OPTION_IN_COPTS));
-    ImmutableList.Builder<PathFragment> nonPropagatedHeaderSearchPaths =
-        new ImmutableList.Builder<>();
-    for (String includeDirOption : includeDirOptions) {
-      nonPropagatedHeaderSearchPaths.add(PathFragment.create(includeDirOption.substring(2)));
-    }
-
-    // We also need to add the -isystem directories from the CC header providers. ObjCommon
-    // adds these to the objcProvider, so let's just get them from there.
-    Iterable<PathFragment> includeSystemPaths = common.getObjcProvider().get(INCLUDE_SYSTEM);
-
-    xcodeProviderBuilder
-        .addHeaders(attributes.hdrs())
-        .addHeaders(attributes.textualHdrs())
-        .addUserHeaderSearchPaths(
-            ObjcCommon.userHeaderSearchPaths(common.getObjcProvider(), buildConfiguration))
-        .addHeaderSearchPaths(
-            "$(WORKSPACE_ROOT)",
-            attributes.headerSearchPaths(buildConfiguration.getGenfilesFragment()))
-        .addHeaderSearchPaths("$(WORKSPACE_ROOT)", includeSystemPaths)
-        .addHeaderSearchPaths("$(SDKROOT)/usr/include", attributes.sdkIncludes())
-        .addNonPropagatedHeaderSearchPaths(
-            "$(WORKSPACE_ROOT)", nonPropagatedHeaderSearchPaths.build())
-        .addCompilationModeCopts(objcConfiguration.getCoptsForCompilationMode())
-        .addCopts(coptsWithoutIncludeDirs);
-
-    return this;
-  }
- 
-  /**
    * Registers all actions necessary to compile this rule's sources and archive them.
    *
    * @param compilationArtifacts collection of artifacts required for the compilation
@@ -816,7 +746,7 @@ public abstract class CompilationSupport {
           common.getObjcProvider(),
           extraCompileArgs,
           priorityHeaders,
-          toolchain,
+          maybeGetCcToolchain(),
           maybeGetFdoSupport());
     }
     return this;
@@ -1237,7 +1167,7 @@ public abstract class CompilationSupport {
    */
   protected void registerBinaryStripAction(Artifact binaryToLink, StrippingType strippingType) {
     final Iterable<String> stripArgs;
-    if (TargetUtils.isTestRule(ruleContext.getRule())) {
+    if (isTestRule) {
       // For test targets, only debug symbols are stripped off, since /usr/bin/strip is not able
       // to strip off all symbols in XCTest bundle.
       stripArgs = ImmutableList.of("-S");
@@ -1489,6 +1419,18 @@ public abstract class CompilationSupport {
       objcHeaderThinningInfoByCommandLine.put(filteredArgumentsBuilder.build(), info);
     }
     return objcHeaderThinningInfoByCommandLine;
+  }
+
+  @Nullable
+  private CcToolchainProvider maybeGetCcToolchain() {
+    // TODO(rduan): Remove this check once all rules are using the crosstool support.
+    if (ruleContext
+        .attributes()
+        .has(CcToolchain.CC_TOOLCHAIN_DEFAULT_ATTRIBUTE_NAME, BuildType.LABEL)) {
+      return CppHelper.getToolchainUsingDefaultCcToolchainAttribute(ruleContext);
+    } else {
+      return null;
+    }
   }
 
   @Nullable

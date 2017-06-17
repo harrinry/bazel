@@ -23,6 +23,8 @@ import com.google.devtools.build.lib.analysis.BaseRuleClasses;
 import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
 import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider.Builder;
 import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider.RuleSet;
+import com.google.devtools.build.lib.analysis.PlatformConfigurationLoader;
+import com.google.devtools.build.lib.analysis.PlatformOptions;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
 import com.google.devtools.build.lib.analysis.constraints.EnvironmentRule;
 import com.google.devtools.build.lib.bazel.rules.BazelToolchainType.BazelToolchainTypeRule;
@@ -241,6 +243,9 @@ public class BazelRuleClassProvider {
       new RuleSet() {
         @Override
         public void init(Builder builder) {
+          builder.addConfigurationOptions(PlatformOptions.class);
+          builder.addConfigurationFragment(new PlatformConfigurationLoader());
+
           builder.addRuleDefinition(new ConstraintSettingRule());
           builder.addRuleDefinition(new ConstraintValueRule());
           builder.addRuleDefinition(new PlatformRule());
@@ -585,7 +590,6 @@ public class BazelRuleClassProvider {
           builder.addRuleDefinition(new ObjcRuleClasses.LinkingRule(objcProtoAspect));
           builder.addRuleDefinition(new ObjcRuleClasses.MultiArchPlatformRule());
           builder.addRuleDefinition(new ObjcRuleClasses.ResourcesRule());
-          builder.addRuleDefinition(new ObjcRuleClasses.XcodegenRule());
           builder.addRuleDefinition(new ObjcRuleClasses.AlwaysLinkRule());
           builder.addRuleDefinition(new ObjcRuleClasses.SdkFrameworksDependerRule());
           builder.addRuleDefinition(new ObjcRuleClasses.CompileDependencyRule());

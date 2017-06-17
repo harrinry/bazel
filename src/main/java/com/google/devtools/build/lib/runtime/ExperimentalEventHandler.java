@@ -147,6 +147,16 @@ public class ExperimentalEventHandler implements EventHandler {
         stream.write(b);
       }
     }
+
+    @Override
+    public void flush() throws IOException {
+      stream.flush();
+    }
+
+    @Override
+    public void close() throws IOException {
+      stream.close();
+    }
   }
 
   public ExperimentalEventHandler(
@@ -242,7 +252,7 @@ public class ExperimentalEventHandler implements EventHandler {
   }
 
   private synchronized void maybeAddDate() {
-    if (!showTimestamp || dateShown) {
+    if (!showTimestamp || dateShown || buildComplete) {
       return;
     }
     dateShown = true;
@@ -436,6 +446,7 @@ public class ExperimentalEventHandler implements EventHandler {
   public void buildComplete(BuildCompleteEvent event) {
     // The final progress bar will flow into the scroll-back buffer, to if treat
     // it as an event and add a timestamp, if events are supposed to have a timestmap.
+    boolean done = false;
     synchronized (this) {
       stateTracker.buildComplete(event);
       ignoreRefreshLimitOnce();
@@ -445,9 +456,12 @@ public class ExperimentalEventHandler implements EventHandler {
       // upload happening.
       if (stateTracker.pendingTransports() == 0) {
         buildComplete = true;
-        stopUpdateThread();
-        flushStdOutStdErrBuffers();
+        done = true;
       }
+    }
+    if (done) {
+      stopUpdateThread();
+      flushStdOutStdErrBuffers();
     }
   }
 
@@ -564,7 +578,7 @@ public class ExperimentalEventHandler implements EventHandler {
   }
 
   @Subscribe
-  public synchronized void buildEventTransportClosed(BuildEventTransportClosedEvent event) {
+  public void buildEventTransportClosed(BuildEventTransportClosedEvent event) {
     stateTracker.buildEventTransportClosed(event);
     if (debugAllEvents) {
       this.handle(Event.info(null, "Transport " + event.transport().name() + " closed"));
@@ -711,6 +725,11 @@ public class ExperimentalEventHandler implements EventHandler {
     }
   }
 
+  /**
+   * Stop the update thread and wait for it to terminate. As the update thread, which is a separate
+   * thread, might have to call a synchronized method between being interrupted and terminating, DO
+   * NOT CALL from a SYNCHRONIZED block, as this will give the opportunity for dead locks.
+   */
   private void stopUpdateThread() {
     Thread threadToWaitFor = null;
     synchronized (this) {
