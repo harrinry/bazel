@@ -14,6 +14,7 @@
 
 package com.google.devtools.build.lib.rules.test;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -32,6 +33,7 @@ import com.google.devtools.build.lib.analysis.RunfilesSupplierImpl;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
 import com.google.devtools.build.lib.analysis.config.RunUnder;
 import com.google.devtools.build.lib.cmdline.Label;
+import com.google.devtools.build.lib.collect.ImmutableIterable;
 import com.google.devtools.build.lib.collect.nestedset.NestedSet;
 import com.google.devtools.build.lib.util.Fingerprint;
 import com.google.devtools.build.lib.util.LoggingUtil;
@@ -92,15 +94,17 @@ public class TestRunnerAction extends AbstractAction implements NotifyOnActionCa
   private final String workspaceName;
   private final boolean useTestRunner;
 
-  // Mutable state related to test caching.
-  private Boolean unconditionalExecution; // lazily initialized: null indicates unknown
+  // Mutable state related to test caching. Lazily initialized: null indicates unknown.
+  private Boolean unconditionalExecution;
 
-  // Any extra environment variables (and values) added by the rule that created this action.
+  /** Any extra environment variables (and values) added by the rule that created this action. */
   private final ImmutableMap<String, String> extraTestEnv;
 
-  // These are handled explicitly by the ActionCacheChecker and so don't have to be included in the
-  // cache key.
-  private final Iterable<String> requiredClientEnvVariables;
+  /**
+   * The set of environment variables that are inherited from the client environment. These are
+   * handled explicitly by the ActionCacheChecker and so don't have to be included in the cache key.
+   */
+  private final ImmutableIterable<String> requiredClientEnvVariables;
 
   private static ImmutableList<Artifact> list(Artifact... artifacts) {
     ImmutableList.Builder<Artifact> builder = ImmutableList.builder();
@@ -179,8 +183,9 @@ public class TestRunnerAction extends AbstractAction implements NotifyOnActionCa
 
     this.extraTestEnv = ImmutableMap.copyOf(extraTestEnv);
     this.requiredClientEnvVariables =
-        Iterables.concat(
-            configuration.getVariableShellEnvironment(), configuration.getInheritedTestEnv());
+        ImmutableIterable.from(Iterables.concat(
+            configuration.getActionEnvironment().getInheritedEnv(),
+            configuration.getTestActionEnvironment().getInheritedEnv()));
   }
 
   public BuildConfiguration getConfiguration() {
@@ -227,8 +232,8 @@ public class TestRunnerAction extends AbstractAction implements NotifyOnActionCa
     f.addStringMap(extraTestEnv);
     // TODO(ulfjack): It might be better for performance to hash the action and test envs in config,
     // and only add a hash here.
-    f.addStringMap(configuration.getLocalShellEnvironment());
-    f.addStringMap(configuration.getTestEnv());
+    configuration.getActionEnvironment().addTo(f);
+    configuration.getTestActionEnvironment().addTo(f);
     // The 'requiredClientEnvVariables' are handled by Skyframe and don't need to be added here.
     f.addString(testProperties.getSize().toString());
     f.addString(testProperties.getTimeout().toString());
@@ -267,41 +272,46 @@ public class TestRunnerAction extends AbstractAction implements NotifyOnActionCa
   }
 
   /**
-   * Returns the cache from disk, or null if there is an error.
+   * Returns the cache from disk, or null if the file doesn't exist or if there is an error.
    */
   @Nullable
   private TestResultData readCacheStatus() {
     try (InputStream in = cacheStatus.getPath().getInputStream()) {
       return TestResultData.parseFrom(in);
     } catch (IOException expected) {
-
+      return null;
     }
-    return null;
   }
 
   private boolean computeExecuteUnconditionallyFromTestStatus() {
-    if (configuration.cacheTestResults() == TriState.NO || testProperties.isExternal()
-        || (configuration.cacheTestResults() == TriState.AUTO
-            && configuration.getRunsPerTestForLabel(getOwner().getLabel()) > 1)) {
-      return true;
-    }
+    return !canBeCached(
+        configuration.cacheTestResults(),
+        readCacheStatus(),
+        testProperties.isExternal(),
+        configuration.getRunsPerTestForLabel(getOwner().getLabel()));
+  }
 
+  @VisibleForTesting
+  static boolean canBeCached(
+      TriState cacheTestResults, TestResultData prevStatus, boolean isExternal, int runsPerTest) {
+    if (cacheTestResults == TriState.NO) {
+      return false;
+    }
+    if (isExternal) {
+      return false;
+    }
+    if (cacheTestResults == TriState.AUTO && (runsPerTest > 1)) {
+      return false;
+    }
     // Test will not be executed unconditionally - check whether test result exists and is
     // valid. If it is, method will return false and we will rely on the dependency checker
     // to make a decision about test execution.
-    TestResultData status = readCacheStatus();
-    if (status != null) {
-      if (!status.getCachable()) {
-        return true;
-      }
-
-      return (configuration.cacheTestResults() == TriState.AUTO
-          && !status.getTestPassed());
+    if (cacheTestResults == TriState.AUTO && prevStatus != null && !prevStatus.getTestPassed()) {
+      return false;
     }
-
-    // CacheStatus is an artifact, so if it does not exist, the dependency checker will rebuild
-    // it. We can't return "true" here, as it also signals to not accept cached remote results.
-    return false;
+    // Rely on the dependency checker to determine if the test can be cached. Note that the status
+    // is a declared output, so its non-existence also triggers a re-run.
+    return true;
   }
 
   /**

@@ -120,13 +120,13 @@ public class AndroidDataBindingTest extends AndroidBuildViewTestCase {
     // output:
     Artifact libResourceInfoOutput = getFirstArtifactEndingWith(allArtifacts,
         "databinding/lib_with_data_binding/layout-info.zip");
-    assertThat(getGeneratingSpawnAction(libResourceInfoOutput).getArguments())
+    assertThat(getGeneratingSpawnActionArgs(libResourceInfoOutput))
         .containsAllOf("--dataBindingInfoOut", libResourceInfoOutput.getExecPathString())
         .inOrder();
 
     Artifact binResourceInfoOutput = getFirstArtifactEndingWith(allArtifacts,
         "databinding/app/layout-info.zip");
-    assertThat(getGeneratingSpawnAction(binResourceInfoOutput).getArguments())
+    assertThat(getGeneratingSpawnActionArgs(binResourceInfoOutput))
         .containsAllOf("--dataBindingInfoOut", binResourceInfoOutput.getExecPathString())
         .inOrder();
 
@@ -272,5 +272,32 @@ public class AndroidDataBindingTest extends AndroidBuildViewTestCase {
     assertThat(ActionsTestUtil.prettyArtifactNames(libCompileAction.getInputs()))
         .contains("java/android/lib_no_resource_files/databinding/lib_no_resource_files/"
             + "DataBindingInfo.java");
+  }
+
+  @Test
+  public void missingDataBindingAttributeStillAnalyzes() throws Exception {
+    // When a library is missing enable_data_binding = 1, we expect it to fail in execution (because
+    // aapt doesn't know how to read the data binding expressions). But analysis should work.
+    scratch.file("java/android/library/BUILD",
+        "android_library(",
+        "    name = 'lib_with_data_binding',",
+        "    enable_data_binding = 1,",
+        "    manifest = 'AndroidManifest.xml',",
+        "    srcs = ['MyLib.java'],",
+        "    resource_files = [],",
+        ")");
+    scratch.file("java/android/library/MyLib.java",
+        "package android.library; public class MyLib {};");
+    scratch.file("java/android/binary/BUILD",
+        "android_binary(",
+        "    name = 'app',",
+        "    enable_data_binding = 0,",
+        "    manifest = 'AndroidManifest.xml',",
+        "    srcs = ['MyApp.java'],",
+        "    deps = ['//java/android/library:lib_with_data_binding'],",
+        ")");
+    scratch.file("java/android/binary/MyApp.java",
+        "package android.binary; public class MyApp {};");
+    assertThat(getConfiguredTarget("//java/android/binary:app")).isNotNull();
   }
 }

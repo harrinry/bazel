@@ -42,7 +42,6 @@ import com.google.devtools.build.lib.skylarkinterface.SkylarkModuleCategory;
 import com.google.devtools.build.lib.syntax.EvalUtils;
 import com.google.devtools.build.lib.util.Preconditions;
 import com.google.devtools.build.lib.vfs.PathFragment;
-import com.google.devtools.build.xcode.xcodegen.proto.XcodeGenProtos.TargetControl;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -57,12 +56,18 @@ import java.util.Map;
   category = SkylarkModuleCategory.PROVIDER,
   doc = "A provider for compilation and linking of objc."
 )
-public final class ObjcProvider extends SkylarkClassObject implements TransitiveInfoProvider {
+public final class ObjcProvider extends SkylarkClassObject
+    implements TransitiveInfoProvider, TransitiveInfoProvider.WithLegacySkylarkName {
 
   /**
    * The skylark struct key name for a rule implementation to use when exporting an ObjcProvider.
    */
   public static final String OBJC_SKYLARK_PROVIDER_NAME = "objc";
+
+  @Override
+  public String getSkylarkName() {
+    return OBJC_SKYLARK_PROVIDER_NAME;
+  }
 
   /**
    * Represents one of the things this provider can provide transitively. Things are provided as
@@ -667,13 +672,7 @@ public final class ObjcProvider extends SkylarkClassObject implements Transitive
    */
   private static Predicate<Artifact> notContainedIn(
       final HashSet<Artifact> linkedLibraryArtifacts) {
-    return new Predicate<Artifact>() {
-
-      @Override
-      public boolean apply(Artifact libraryToLink) {
-        return !linkedLibraryArtifacts.contains(libraryToLink);
-      }
-    };
+    return libraryToLink -> !linkedLibraryArtifacts.contains(libraryToLink);
   }
 
   /**
@@ -685,13 +684,7 @@ public final class ObjcProvider extends SkylarkClassObject implements Transitive
    */
   private static Predicate<LibraryToLink> ccLibraryNotYetLinked(
       final HashSet<Artifact> linkedLibraryArtifacts) {
-    return new Predicate<LibraryToLink>() {
-
-      @Override
-      public boolean apply(LibraryToLink libraryToLink) {
-        return !linkedLibraryArtifacts.contains(libraryToLink.getArtifact());
-      }
-    };
+    return libraryToLink -> !linkedLibraryArtifacts.contains(libraryToLink.getArtifact());
   }
 
   @SuppressWarnings("unchecked")
@@ -735,9 +728,7 @@ public final class ObjcProvider extends SkylarkClassObject implements Transitive
     private final Map<Key<?>, NestedSetBuilder<?>> strictDependencyItems = new HashMap<>();
 
     private static void maybeAddEmptyBuilder(Map<Key<?>, NestedSetBuilder<?>> set, Key<?> key) {
-      if (!set.containsKey(key)) {
-        set.put(key, new NestedSetBuilder<>(key.order));
-      }
+      set.computeIfAbsent(key, k -> new NestedSetBuilder<>(k.order));
     }
 
     @SuppressWarnings({"rawtypes", "unchecked"})

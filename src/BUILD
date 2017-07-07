@@ -8,9 +8,9 @@ filegroup(
     srcs = select({
         ":darwin": ["//src/main/native:libunix.dylib"],
         ":darwin_x86_64": ["//src/main/native:libunix.dylib"],
-        ":windows": ["//src/main/native:windows_jni.dll"],
-        ":windows_msys": ["//src/main/native:windows_jni.dll"],
-        ":windows_msvc": ["//src/main/native:windows_jni.dll"],
+        ":windows": ["//src/main/native/windows:windows_jni.dll"],
+        ":windows_msys": ["//src/main/native/windows:windows_jni.dll"],
+        ":windows_msvc": ["//src/main/native/windows:windows_jni.dll"],
         "//conditions:default": ["//src/main/native:libunix.so"],
     }),
     visibility = [
@@ -81,7 +81,6 @@ OSX_DUMMY_TARGETS = [
     "src/tools/xcode/environment/environment_plist",
     "src/objc_tools/bundlemerge/bundlemerge_deploy.jar",
     "src/objc_tools/plmerge/plmerge_deploy.jar",
-    "src/objc_tools/xcodegen/xcodegen_deploy.jar",
     "src/tools/xcode/realpath/realpath",
     "src/tools/xcode/stdredirect/StdRedirect.dylib",
 ]
@@ -106,7 +105,6 @@ filegroup(
         "//src/tools/xcode/environment:environment_plist",
         "//src/objc_tools/bundlemerge:bundlemerge_deploy.jar",
         "//src/objc_tools/plmerge:plmerge_deploy.jar",
-        "//src/objc_tools/xcodegen:xcodegen_deploy.jar",
         "//src/tools/xcode/realpath:realpath",
         "//tools/osx:xcode_locator.m",
     ] + select({
@@ -199,6 +197,9 @@ filegroup(
             "@openjdk_win//file",
         ],
         ":windows_msvc": [
+            "@openjdk_win//file",
+        ],
+        ":windows": [
             "@openjdk_win//file",
         ],
         "//conditions:default": [
@@ -361,8 +362,8 @@ filegroup(
         "//src/main/tools:srcs",
         "//src/objc_tools/bundlemerge:srcs",
         "//src/objc_tools/plmerge:srcs",
-        "//src/objc_tools/xcodegen:srcs",
         "//src/test/cpp:srcs",
+        "//src/test/docker:srcs",
         "//src/test/gen:srcs",
         "//src/test/native:srcs",
         "//src/test/java/com/google/devtools/build/android:srcs",
@@ -398,7 +399,7 @@ genrule(
         "@googleapis//:dist_jars",
     ],
     outs = ["derived_java_srcs.zip"],
-    cmd = "$(location :combine_derived_java_srcs.sh) $@ $(SRCS)",
+    cmd = "$(location :combine_derived_java_srcs.sh) $(JAVABASE) $@ $(SRCS)",
     tools = ["combine_derived_java_srcs.sh"],
     visibility = ["//:__pkg__"],
 )

@@ -8,6 +8,7 @@ java_library(
     name = "remote",
     srcs = glob(["*.java"]),
     data = ["//src:libunix"],
+    resources = ["//src/main/tools:linux-sandbox"],
     visibility = ["//src/tools/remote_worker:__subpackages__"],
     deps = [
         "//src/main/java/com/google/devtools/build/lib:auth_and_tls_options",
@@ -26,6 +27,7 @@ java_library(
         "//src/main/java/com/google/devtools/build/lib:vfs",
         "//src/main/java/com/google/devtools/build/lib/remote",
         "//src/main/java/com/google/devtools/common/options",
+        "//src/main/protobuf:option_filters_java_proto",
         "//third_party:guava",
         "//third_party:hazelcast",
         "//third_party:netty",

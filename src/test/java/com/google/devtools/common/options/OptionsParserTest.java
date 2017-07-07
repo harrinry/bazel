@@ -26,6 +26,7 @@ import com.google.devtools.common.options.OptionsParser.ConstructionException;
 import com.google.devtools.common.options.OptionsParser.OptionUsageRestrictions;
 import com.google.devtools.common.options.OptionsParser.OptionValueDescription;
 import com.google.devtools.common.options.OptionsParser.UnparsedOptionValueDescription;
+import com.google.devtools.common.options.proto.OptionFilters.OptionEffectTag;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -56,12 +57,16 @@ public class OptionsParserTest {
   public static class BadOptions extends OptionsBase {
     @Option(
       name = "foo",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
       defaultValue = "false"
     )
     public boolean foo1;
 
     @Option(
       name = "foo",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
       defaultValue = "false"
     )
     public boolean foo2;
@@ -79,32 +84,50 @@ public class OptionsParserTest {
 
   public static class ExampleFoo extends OptionsBase {
 
-    @Option(name = "foo",
-            category = "one",
-            defaultValue = "defaultFoo")
+    @Option(
+      name = "foo",
+      category = "one",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "defaultFoo"
+    )
     public String foo;
 
-    @Option(name = "bar",
-            category = "two",
-            defaultValue = "42")
+    @Option(
+      name = "bar",
+      category = "two",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "42"
+    )
     public int bar;
 
-    @Option(name = "bing",
-            category = "one",
-            defaultValue = "",
-            allowMultiple = true)
+    @Option(
+      name = "bing",
+      category = "one",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "",
+      allowMultiple = true
+    )
     public List<String> bing;
 
-    @Option(name = "bang",
-            category = "one",
-            defaultValue = "",
-            converter = StringConverter.class,
-            allowMultiple = true)
+    @Option(
+      name = "bang",
+      category = "one",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "",
+      converter = StringConverter.class,
+      allowMultiple = true
+    )
     public List<String> bang;
 
     @Option(
       name = "nodoc",
       optionUsageRestrictions = OptionUsageRestrictions.UNDOCUMENTED,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
       defaultValue = "",
       allowMultiple = false
     )
@@ -113,18 +136,26 @@ public class OptionsParserTest {
 
   public static class ExampleBaz extends OptionsBase {
 
-    @Option(name = "baz",
-            category = "one",
-            defaultValue = "defaultBaz")
+    @Option(
+      name = "baz",
+      category = "one",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "defaultBaz"
+    )
     public String baz;
   }
 
   /** Subclass of an options class. */
   public static class ExampleBazSubclass extends ExampleBaz {
 
-    @Option(name = "baz_subclass",
-            category = "one",
-            defaultValue = "defaultBazSubclass")
+    @Option(
+      name = "baz_subclass",
+      category = "one",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "defaultBazSubclass"
+    )
     public String bazSubclass;
   }
 
@@ -132,9 +163,13 @@ public class OptionsParserTest {
    * Example with empty to null string converter
    */
   public static class ExampleBoom extends OptionsBase {
-    @Option(name = "boom",
-            defaultValue = "defaultBoom",
-            converter = EmptyToNullStringConverter.class)
+    @Option(
+      name = "boom",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "defaultBoom",
+      converter = EmptyToNullStringConverter.class
+    )
     public String boom;
   }
 
@@ -145,6 +180,8 @@ public class OptionsParserTest {
     @Option(
       name = "internal_boolean",
       optionUsageRestrictions = OptionUsageRestrictions.INTERNAL,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
       defaultValue = "true"
     )
     public boolean privateBoolean;
@@ -152,6 +189,8 @@ public class OptionsParserTest {
     @Option(
       name = "internal_string",
       optionUsageRestrictions = OptionUsageRestrictions.INTERNAL,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
       defaultValue = "super secret"
     )
     public String privateString;
@@ -159,6 +198,8 @@ public class OptionsParserTest {
     @Option(
       name = "public string",
       optionUsageRestrictions = OptionUsageRestrictions.UNDOCUMENTED,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
       defaultValue = "not a secret"
     )
     public String publicString;
@@ -619,13 +660,19 @@ public class OptionsParserTest {
       name = "swiss_bank_account_number",
       optionUsageRestrictions =
           OptionUsageRestrictions.UNDOCUMENTED, // Not printed in usage messages!
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
       defaultValue = "123456789"
     )
     public int swissBankAccountNumber;
 
-    @Option(name = "student_bank_account_number",
-            category = "one",
-            defaultValue = "987654321")
+    @Option(
+      name = "student_bank_account_number",
+      category = "one",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "987654321"
+    )
     public int studentBankAccountNumber;
   }
 
@@ -753,7 +800,12 @@ public class OptionsParserTest {
   // being printed by toString.  One day, a real rain will come and wash all
   // this scummy code off the streets.
   public static class DerivedBaz extends ExampleBaz {
-    @Option(name = "derived", defaultValue = "defaultDerived")
+    @Option(
+      name = "derived",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "defaultDerived"
+    )
     public String derived;
   }
 
@@ -769,14 +821,22 @@ public class OptionsParserTest {
 
   // Tests for new default value override mechanism
   public static class CustomOptions extends OptionsBase {
-    @Option(name = "simple",
-        category = "custom",
-        defaultValue = "simple default")
+    @Option(
+      name = "simple",
+      category = "custom",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "simple default"
+    )
     public String simple;
 
-    @Option(name = "multipart_name",
-        category = "custom",
-        defaultValue = "multipart default")
+    @Option(
+      name = "multipart_name",
+      category = "custom",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "multipart default"
+    )
     public String multipartName;
   }
 
@@ -788,8 +848,12 @@ public class OptionsParserTest {
   }
 
   public static class NullTestOptions extends OptionsBase {
-    @Option(name = "simple",
-            defaultValue = "null")
+    @Option(
+      name = "simple",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public String simple;
   }
 
@@ -800,18 +864,30 @@ public class OptionsParserTest {
   }
 
   public static class ImplicitDependencyOptions extends OptionsBase {
-    @Option(name = "first",
-            implicitRequirements = "--second=second",
-            defaultValue = "null")
+    @Option(
+      name = "first",
+      implicitRequirements = "--second=second",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public String first;
 
-    @Option(name = "second",
-        implicitRequirements = "--third=third",
-        defaultValue = "null")
+    @Option(
+      name = "second",
+      implicitRequirements = "--third=third",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public String second;
 
-    @Option(name = "third",
-        defaultValue = "null")
+    @Option(
+      name = "third",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public String third;
   }
 
@@ -825,9 +901,13 @@ public class OptionsParserTest {
   }
 
   public static class BadImplicitDependencyOptions extends OptionsBase {
-    @Option(name = "first",
-            implicitRequirements = "xxx",
-            defaultValue = "null")
+    @Option(
+      name = "first",
+      implicitRequirements = "xxx",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public String first;
   }
 
@@ -844,9 +924,13 @@ public class OptionsParserTest {
   }
 
   public static class BadExpansionOptions extends OptionsBase {
-    @Option(name = "first",
-            expansion = { "xxx" },
-            defaultValue = "null")
+    @Option(
+      name = "first",
+      expansion = {"xxx"},
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public Void first;
   }
 
@@ -868,7 +952,7 @@ public class OptionsParserTest {
     /** ExpFunc */
     public static class ExpFunc implements ExpansionFunction {
       @Override
-      public ImmutableList<String> getExpansion(IsolatedOptionsData optionsData) {
+      public ImmutableList<String> getExpansion(ExpansionContext context) {
         return ImmutableList.of("--yyy");
       }
     }
@@ -877,6 +961,8 @@ public class OptionsParserTest {
       name = "badness",
       expansion = {"--xxx"},
       expansionFunction = ExpFunc.class,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
       defaultValue = "null"
     )
     public Void badness;
@@ -900,12 +986,18 @@ public class OptionsParserTest {
     /** ExpFunc */
     public static class ExpFunc implements ExpansionFunction {
       @Override
-      public ImmutableList<String> getExpansion(IsolatedOptionsData optionsData) {
+      public ImmutableList<String> getExpansion(ExpansionContext context) {
         return null;
       }
     }
 
-    @Option(name = "badness", expansionFunction = ExpFunc.class, defaultValue = "null")
+    @Option(
+      name = "badness",
+      expansionFunction = ExpFunc.class,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public Void badness;
   }
 
@@ -917,19 +1009,59 @@ public class OptionsParserTest {
       newOptionsParser(NullExpansionsOptions.class);
       fail("Should have failed due to null expansion function result");
     } catch (OptionsParser.ConstructionException e) {
-      assertThat(e).hasCauseThat().isInstanceOf(NullPointerException.class);
-      assertThat(e).hasCauseThat().hasMessageThat().contains("null value in entry");
+      assertThat(e).hasCauseThat().isInstanceOf(IllegalStateException.class);
+    }
+  }
+
+  /** NullExpansionOptions */
+  public static class NullExpansionsWithArgumentOptions extends OptionsBase {
+
+    /** ExpFunc */
+    public static class ExpFunc implements ExpansionFunction {
+      @Override
+      public ImmutableList<String> getExpansion(ExpansionContext context) {
+        return null;
+      }
+    }
+
+    @Option(
+      name = "badness",
+      expansionFunction = ExpFunc.class,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
+    public String badness;
+  }
+
+  @Test
+  public void nullExpansionsWithArgument() throws Exception {
+    try {
+      // When an expansion takes a value, this exception should still happen at parse time.
+      newOptionsParser(NullExpansionsWithArgumentOptions.class);
+      fail("Should have failed due to null expansion function result");
+    } catch (OptionsParser.ConstructionException e) {
+      assertThat(e)
+          .hasMessageThat()
+          .isEqualTo("Error calling expansion function for option: badness");
     }
   }
 
   /** ExpansionOptions */
   public static class ExpansionOptions extends OptionsBase {
-    @Option(name = "underlying", defaultValue = "null")
+    @Option(
+      name = "underlying",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public String underlying;
 
     @Option(
       name = "expands",
       expansion = {"--underlying=from_expansion"},
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
       defaultValue = "null"
     )
     public Void expands;
@@ -937,12 +1069,53 @@ public class OptionsParserTest {
     /** ExpFunc */
     public static class ExpFunc implements ExpansionFunction {
       @Override
-      public ImmutableList<String> getExpansion(IsolatedOptionsData optionsData) {
+      public ImmutableList<String> getExpansion(ExpansionContext context) {
         return ImmutableList.of("--expands");
       }
     }
 
-    @Option(name = "expands_by_function", defaultValue = "null", expansionFunction = ExpFunc.class)
+    @Option(
+      name = "expands_by_function",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null",
+      expansionFunction = ExpFunc.class
+    )
+    public Void expandsByFunction;
+  }
+
+  /** ExpansionMultipleOptions */
+  public static class ExpansionMultipleOptions extends OptionsBase {
+    @Option(
+      name = "underlying",
+      defaultValue = "null",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      allowMultiple = true
+    )
+    public List<String> underlying;
+
+    /** ExpFunc */
+    public static class ExpFunc implements ExpansionFunction {
+      @Override
+      public ImmutableList<String> getExpansion(ExpansionContext context)
+          throws OptionsParsingException {
+        String value = context.getUnparsedValue();
+        if (value == null) {
+          throw new ExpansionNeedsValueException("No value given to 'expands_by_function'");
+        }
+
+        return ImmutableList.of("--underlying=pre_" + value, "--underlying=post_" + value);
+      }
+    }
+
+    @Option(
+      name = "expands_by_function",
+      defaultValue = "null",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      expansionFunction = ExpFunc.class
+    )
     public Void expandsByFunction;
   }
 
@@ -974,6 +1147,19 @@ public class OptionsParserTest {
         OptionPriority.COMMAND_LINE, null, Arrays.asList("--underlying=direct_value", "--expands"));
     ExpansionOptions options = parser.getOptions(ExpansionOptions.class);
     assertThat(options.underlying).isEqualTo("from_expansion");
+  }
+
+  // Makes sure the expansion options are expanded in the right order if they affect flags that
+  // allow multiples.
+  @Test
+  public void multipleExpansionOptionsWithValue() throws Exception {
+    OptionsParser parser = OptionsParser.newOptionsParser(ExpansionMultipleOptions.class);
+    parser.parse(
+        OptionPriority.COMMAND_LINE,
+        null,
+        Arrays.asList("--expands_by_function=a", "--expands_by_function=b"));
+    ExpansionMultipleOptions options = parser.getOptions(ExpansionMultipleOptions.class);
+    assertThat(options.underlying).containsExactly("pre_a", "post_a", "pre_b", "post_b").inOrder();
   }
 
   @Test
@@ -1029,18 +1215,30 @@ public class OptionsParserTest {
   }
 
   public static class ImplicitDependencyWarningOptions extends OptionsBase {
-    @Option(name = "first",
-            implicitRequirements = "--second=second",
-            defaultValue = "null")
+    @Option(
+      name = "first",
+      implicitRequirements = "--second=second",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public String first;
 
-    @Option(name = "second",
-        defaultValue = "null")
+    @Option(
+      name = "second",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public String second;
 
-    @Option(name = "third",
-            implicitRequirements = "--second=third",
-            defaultValue = "null")
+    @Option(
+      name = "third",
+      implicitRequirements = "--second=third",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public String third;
   }
 
@@ -1086,25 +1284,41 @@ public class OptionsParserTest {
 
   public static class WarningOptions extends OptionsBase {
     @Deprecated
-    @Option(name = "first",
-            defaultValue = "null")
+    @Option(
+      name = "first",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public Void first;
 
     @Deprecated
-    @Option(name = "second",
-            allowMultiple = true,
-            defaultValue = "null")
+    @Option(
+      name = "second",
+      allowMultiple = true,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public List<String> second;
 
     @Deprecated
-    @Option(name = "third",
-            expansion = "--fourth=true",
-            abbrev = 't',
-            defaultValue = "null")
+    @Option(
+      name = "third",
+      expansion = "--fourth=true",
+      abbrev = 't',
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public Void third;
 
-    @Option(name = "fourth",
-            defaultValue = "false")
+    @Option(
+      name = "fourth",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "false"
+    )
     public boolean fourth;
   }
 
@@ -1139,25 +1353,41 @@ public class OptionsParserTest {
   }
 
   public static class NewWarningOptions extends OptionsBase {
-    @Option(name = "first",
-            defaultValue = "null",
-            deprecationWarning = "it's gone")
+    @Option(
+      name = "first",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null",
+      deprecationWarning = "it's gone"
+    )
     public Void first;
 
-    @Option(name = "second",
-            allowMultiple = true,
-            defaultValue = "null",
-            deprecationWarning = "sorry, no replacement")
+    @Option(
+      name = "second",
+      allowMultiple = true,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null",
+      deprecationWarning = "sorry, no replacement"
+    )
     public List<String> second;
 
-    @Option(name = "third",
-            expansion = "--fourth=true",
-            defaultValue = "null",
-            deprecationWarning = "use --forth instead")
+    @Option(
+      name = "third",
+      expansion = "--fourth=true",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null",
+      deprecationWarning = "use --forth instead"
+    )
     public Void third;
 
-    @Option(name = "fourth",
-            defaultValue = "false")
+    @Option(
+      name = "fourth",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "false"
+    )
     public boolean fourth;
   }
 
@@ -1190,6 +1420,8 @@ public class OptionsParserTest {
     @Option(
       name = "first",
       expansion = "--underlying=other",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
       defaultValue = "null"
     )
     public Void first;
@@ -1197,12 +1429,16 @@ public class OptionsParserTest {
     @Option(
       name = "second",
       expansion = "--underlying=other",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
       defaultValue = "null"
     )
     public Void second;
 
     @Option(
       name = "underlying",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
       defaultValue = "null"
     )
     public String underlying;
@@ -1239,19 +1475,29 @@ public class OptionsParserTest {
   }
 
   public static class IntrospectionExample extends OptionsBase {
-    @Option(name = "alpha",
-            category = "one",
-            defaultValue = "alpha")
+    @Option(
+      name = "alpha",
+      category = "one",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "alpha"
+    )
     public String alpha;
 
-    @Option(name = "beta",
-            category = "one",
-            defaultValue = "beta")
+    @Option(
+      name = "beta",
+      category = "one",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "beta"
+    )
     public String beta;
 
     @Option(
       name = "gamma",
       optionUsageRestrictions = OptionUsageRestrictions.UNDOCUMENTED,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
       defaultValue = "gamma"
     )
     public String gamma;
@@ -1259,6 +1505,8 @@ public class OptionsParserTest {
     @Option(
       name = "delta",
       optionUsageRestrictions = OptionUsageRestrictions.UNDOCUMENTED,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
       defaultValue = "delta"
     )
     public String delta;
@@ -1266,6 +1514,8 @@ public class OptionsParserTest {
     @Option(
       name = "echo",
       optionUsageRestrictions = OptionUsageRestrictions.HIDDEN,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
       defaultValue = "echo"
     )
     public String echo;
@@ -1362,10 +1612,14 @@ public class OptionsParserTest {
   // Regression tests for bug:
   // "--option from blazerc unexpectedly overrides --option from command line"
   public static class ListExample extends OptionsBase {
-    @Option(name = "alpha",
-            converter = StringConverter.class,
-            allowMultiple = true,
-            defaultValue = "null")
+    @Option(
+      name = "alpha",
+      converter = StringConverter.class,
+      allowMultiple = true,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public List<String> alpha;
   }
 
@@ -1378,10 +1632,14 @@ public class OptionsParserTest {
   }
 
   public static class CommaSeparatedOptionsExample extends OptionsBase {
-    @Option(name = "alpha",
-            converter = CommaSeparatedOptionListConverter.class,
-            allowMultiple = true,
-            defaultValue = "null")
+    @Option(
+      name = "alpha",
+      converter = CommaSeparatedOptionListConverter.class,
+      allowMultiple = true,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public List<String> alpha;
   }
 
@@ -1395,10 +1653,14 @@ public class OptionsParserTest {
   }
 
   public static class IllegalListTypeExample extends OptionsBase {
-    @Option(name = "alpha",
-            converter = CommaSeparatedOptionListConverter.class,
-            allowMultiple = true,
-            defaultValue = "null")
+    @Option(
+      name = "alpha",
+      converter = CommaSeparatedOptionListConverter.class,
+      allowMultiple = true,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public List<Integer> alpha;
   }
 
@@ -1415,37 +1677,65 @@ public class OptionsParserTest {
 
   public static class Yesterday extends OptionsBase {
 
-    @Option(name = "a",
-            defaultValue = "a")
+    @Option(
+      name = "a",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "a"
+    )
     public String a;
 
-    @Option(name = "b",
-            defaultValue = "b")
+    @Option(
+      name = "b",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "b"
+    )
     public String b;
 
-    @Option(name = "c",
-            defaultValue = "null",
-            expansion = {"--a=0"})
+    @Option(
+      name = "c",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null",
+      expansion = {"--a=0"}
+    )
     public Void c;
 
-    @Option(name = "d",
-            defaultValue = "null",
-            allowMultiple = true)
+    @Option(
+      name = "d",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null",
+      allowMultiple = true
+    )
     public List<String> d;
 
-    @Option(name = "e",
-            defaultValue = "null",
-            implicitRequirements = { "--a==1" })
+    @Option(
+      name = "e",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null",
+      implicitRequirements = {"--a==1"}
+    )
     public String e;
 
-    @Option(name = "f",
-            defaultValue = "null",
-            implicitRequirements = { "--b==1" })
+    @Option(
+      name = "f",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null",
+      implicitRequirements = {"--b==1"}
+    )
     public String f;
 
-    @Option(name = "g",
-            abbrev = 'h',
-            defaultValue = "false")
+    @Option(
+      name = "g",
+      abbrev = 'h',
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "false"
+    )
     public boolean g;
   }
 
@@ -1519,12 +1809,20 @@ public class OptionsParserTest {
   }
 
   public static class LongValueExample extends OptionsBase {
-    @Option(name = "longval",
-            defaultValue = "2147483648")
+    @Option(
+      name = "longval",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "2147483648"
+    )
     public long longval;
 
-    @Option(name = "intval",
-            defaultValue = "2147483647")
+    @Option(
+      name = "intval",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "2147483647"
+    )
     public int intval;
   }
 
@@ -1552,9 +1850,13 @@ public class OptionsParserTest {
   }
 
   public static class OldNameExample extends OptionsBase {
-    @Option(name = "new_name",
-            oldName = "old_name",
-            defaultValue = "defaultValue")
+    @Option(
+      name = "new_name",
+      oldName = "old_name",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "defaultValue"
+    )
     public String flag;
   }
 
@@ -1581,7 +1883,12 @@ public class OptionsParserTest {
   }
 
   public static class ExampleBooleanFooOptions extends OptionsBase {
-    @Option(name = "foo", defaultValue = "false")
+    @Option(
+      name = "foo",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "false"
+    )
     public boolean foo;
   }
 
@@ -1598,18 +1905,37 @@ public class OptionsParserTest {
   }
 
   public static class WrapperOptionExample extends OptionsBase {
-    @Option(name = "wrapper",
-            defaultValue = "null",
-            wrapperOption = true)
+    @Option(
+      name = "wrapper",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null",
+      wrapperOption = true
+    )
     public Void wrapperOption;
 
-    @Option(name = "flag1", defaultValue = "false")
+    @Option(
+      name = "flag1",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "false"
+    )
     public boolean flag1;
 
-    @Option(name = "flag2", defaultValue = "42")
+    @Option(
+      name = "flag2",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "42"
+    )
     public int flag2;
 
-    @Option(name = "flag3", defaultValue = "foo")
+    @Option(
+      name = "flag3",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "foo"
+    )
     public String flag3;
   }
 
@@ -1645,16 +1971,31 @@ public class OptionsParserTest {
   /** Dummy options that declares it uses only core types. */
   @UsesOnlyCoreTypes
   public static class CoreTypesOptions extends OptionsBase implements Serializable {
-    @Option(name = "foo", defaultValue = "false")
+    @Option(
+      name = "foo",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "false"
+    )
     public boolean foo;
 
-    @Option(name = "bar", defaultValue = "abc")
+    @Option(
+      name = "bar",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "abc"
+    )
     public String bar;
   }
 
   /** Dummy options that does not declare using only core types. */
   public static class NonCoreTypesOptions extends OptionsBase {
-    @Option(name = "foo", defaultValue = "false")
+    @Option(
+      name = "foo",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "false"
+    )
     public boolean foo;
   }
 
@@ -1681,13 +2022,25 @@ public class OptionsParserTest {
       }
     }
 
-    @Option(name = "foo", defaultValue = "null", converter = FooConverter.class)
+    @Option(
+      name = "foo",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null",
+      converter = FooConverter.class
+    )
     public Foo foo;
   }
 
   /** Dummy options that is unsafe for @UsesOnlyCoreTypes but doesn't use the annotation. */
   public static class SuperBadCoreTypesOptions extends OptionsBase {
-    @Option(name = "foo", defaultValue = "null", converter = BadCoreTypesOptions.FooConverter.class)
+    @Option(
+      name = "foo",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null",
+      converter = BadCoreTypesOptions.FooConverter.class
+    )
     public BadCoreTypesOptions.Foo foo;
   }
 
@@ -1697,7 +2050,12 @@ public class OptionsParserTest {
    */
   @UsesOnlyCoreTypes
   public static class InheritedBadCoreTypesOptions extends SuperBadCoreTypesOptions {
-    @Option(name = "bar", defaultValue = "false")
+    @Option(
+      name = "bar",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "false"
+    )
     public boolean bar;
   }
 

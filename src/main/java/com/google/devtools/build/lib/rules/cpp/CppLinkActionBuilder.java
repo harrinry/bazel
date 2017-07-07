@@ -218,14 +218,16 @@ public class CppLinkActionBuilder {
       RuleContext ruleContext,
       Artifact output,
       CcToolchainProvider toolchain,
-      FdoSupportProvider fdoSupport) {
+      FdoSupportProvider fdoSupport,
+      FeatureConfiguration featureConfiguration) {
     this(
         ruleContext,
         output,
         ruleContext.getConfiguration(),
         ruleContext.getAnalysisEnvironment(),
         toolchain,
-        fdoSupport);
+        fdoSupport,
+        featureConfiguration);
   }
 
   /**
@@ -242,9 +244,16 @@ public class CppLinkActionBuilder {
       Artifact output,
       BuildConfiguration configuration,
       CcToolchainProvider toolchain,
-      FdoSupportProvider fdoSupport) {
-    this(ruleContext, output, configuration, ruleContext.getAnalysisEnvironment(), toolchain,
-        fdoSupport);
+      FdoSupportProvider fdoSupport,
+      FeatureConfiguration featureConfiguration) {
+    this(
+        ruleContext,
+        output,
+        configuration,
+        ruleContext.getAnalysisEnvironment(),
+        toolchain,
+        fdoSupport,
+        featureConfiguration);
   }
 
   /**
@@ -263,7 +272,8 @@ public class CppLinkActionBuilder {
       BuildConfiguration configuration,
       AnalysisEnvironment analysisEnvironment,
       CcToolchainProvider toolchain,
-      FdoSupportProvider fdoSupport) {
+      FdoSupportProvider fdoSupport,
+      FeatureConfiguration featureConfiguration) {
     this.ruleContext = ruleContext;
     this.analysisEnvironment = Preconditions.checkNotNull(analysisEnvironment);
     this.output = Preconditions.checkNotNull(output);
@@ -274,6 +284,7 @@ public class CppLinkActionBuilder {
     if (cppConfiguration.supportsEmbeddedRuntimes() && toolchain != null) {
       runtimeSolibDir = toolchain.getDynamicRuntimeSolibDir();
     }
+    this.featureConfiguration = featureConfiguration;
   }
 
   /**
@@ -293,7 +304,8 @@ public class CppLinkActionBuilder {
       Context linkContext,
       BuildConfiguration configuration,
       CcToolchainProvider toolchain,
-      FdoSupportProvider fdoSupport) {
+      FdoSupportProvider fdoSupport,
+      FeatureConfiguration featureConfiguration) {
     // These Builder-only fields get set in the constructor:
     //   ruleContext, analysisEnvironment, outputPath, configuration, runtimeSolibDir
     this(
@@ -302,7 +314,8 @@ public class CppLinkActionBuilder {
         configuration,
         ruleContext.getAnalysisEnvironment(),
         toolchain,
-        fdoSupport);
+        fdoSupport,
+        featureConfiguration);
     Preconditions.checkNotNull(linkContext);
 
     // All linkContext fields should be transferred to this Builder.
@@ -561,6 +574,12 @@ public class CppLinkActionBuilder {
           "Interface output can only be used " + "with non-fake DYNAMIC_LIBRARY targets");
     }
 
+    if (!featureConfiguration.actionIsConfigured(linkType.getActionName())) {
+      ruleContext.ruleError(
+          String.format(
+              "Expected action_config for '%s' to be configured", linkType.getActionName()));
+    }
+
     final ImmutableList<Artifact> buildInfoHeaderArtifacts =
         !linkstamps.isEmpty()
             ? analysisEnvironment.getBuildInfo(ruleContext, CppBuildInfo.KEY, configuration)
@@ -758,8 +777,7 @@ public class CppLinkActionBuilder {
             .setFeatureConfiguration(featureConfiguration);
 
     // TODO(b/62693279): Cleanup once internal crosstools specify ifso building correctly.
-    if (linkType.equals(LinkTargetType.DYNAMIC_LIBRARY)
-        && !featureConfiguration.hasConfiguredLinkerPathInActionConfig()) {
+    if (shouldUseLinkDynamicLibraryTool()) {
       linkCommandLineBuilder.forceToolPath(
           toolchain.getLinkDynamicLibraryTool().getExecPathString());
     }
@@ -783,8 +801,11 @@ public class CppLinkActionBuilder {
     // Compute the set of inputs - we only need stable order here.
     NestedSetBuilder<Artifact> dependencyInputsBuilder = NestedSetBuilder.stableOrder();
     dependencyInputsBuilder.addTransitive(crosstoolInputs);
-    dependencyInputsBuilder.add(toolchain.getLinkDynamicLibraryTool());
     dependencyInputsBuilder.addTransitive(linkActionInputs.build());
+    // TODO(b/62693279): Cleanup once internal crosstools specify ifso building correctly.
+    if (shouldUseLinkDynamicLibraryTool()) {
+      dependencyInputsBuilder.add(toolchain.getLinkDynamicLibraryTool());
+    }
     if (runtimeMiddleman != null) {
       dependencyInputsBuilder.add(runtimeMiddleman);
     }
@@ -895,6 +916,12 @@ public class CppLinkActionBuilder {
         executionRequirements.build());
   }
 
+  private boolean shouldUseLinkDynamicLibraryTool() {
+    return linkType.equals(LinkTargetType.DYNAMIC_LIBRARY)
+        && cppConfiguration.supportsInterfaceSharedObjects()
+        && !featureConfiguration.hasConfiguredLinkerPathInActionConfig();
+  }
+
   /** The default heuristic on whether we need to use whole-archive for the link. */
   private static boolean needWholeArchive(
       LinkStaticness staticness,
@@ -974,12 +1001,6 @@ public class CppLinkActionBuilder {
   /** Set the crosstool inputs required for the action. */
   public CppLinkActionBuilder setCrosstoolInputs(NestedSet<Artifact> inputs) {
     this.crosstoolInputs = inputs;
-    return this;
-  }
-
-  /** Sets the feature configuration for the action. */
-  public CppLinkActionBuilder setFeatureConfiguration(FeatureConfiguration featureConfiguration) {
-    this.featureConfiguration = featureConfiguration;
     return this;
   }
 

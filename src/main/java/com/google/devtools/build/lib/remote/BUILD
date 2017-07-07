@@ -4,7 +4,7 @@ package(
 
 java_library(
     name = "remote",
-    srcs = glob(["*.java"]),
+    srcs = glob(["**/*.java"]),
     tags = ["bazel"],
     runtime_deps = [
         # This is required for client TLS.
@@ -25,6 +25,7 @@ java_library(
         "//src/main/java/com/google/devtools/build/lib/exec/local",
         "//src/main/java/com/google/devtools/build/lib/standalone",
         "//src/main/java/com/google/devtools/common/options",
+        "//src/main/protobuf:option_filters_java_proto",
         "//third_party:apache_httpclient",
         "//third_party:apache_httpcore",
         "//third_party:auth",

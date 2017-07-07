@@ -16,6 +16,8 @@ package com.google.devtools.build.lib.syntax;
 import static com.google.common.truth.Truth.assertThat;
 
 import com.google.common.collect.ImmutableMap;
+import com.google.devtools.build.lib.skylarkinterface.SkylarkPrinter;
+import com.google.devtools.build.lib.skylarkinterface.SkylarkValue;
 import com.google.devtools.build.lib.syntax.SkylarkList.MutableList;
 import com.google.devtools.build.lib.syntax.SkylarkList.Tuple;
 import com.google.devtools.build.lib.syntax.util.EvaluationTestCase;
@@ -45,8 +47,8 @@ public class EvaluationTest extends EvaluationTestCase {
    * <p>If a test uses this method, it allows potential subclasses to run the very same test in a
    * different mode in subclasses
    */
-  protected ModalTestCase newTest() {
-    return new BuildTest();
+  protected ModalTestCase newTest(String... skylarkOptions) {
+    return new BuildTest(skylarkOptions);
   }
 
   @Test
@@ -58,7 +60,9 @@ public class EvaluationTest extends EvaluationTestCase {
         .testStatement("123 + 456", 579)
         .testStatement("456 - 123", 333)
         .testStatement("8 % 3", 2)
-        .testIfErrorContains("unsupported operand type(s) for %: 'int' and 'string'", "3 % 'foo'");
+        .testIfErrorContains("unsupported operand type(s) for %: 'int' and 'string'", "3 % 'foo'")
+        .testStatement("-5", -5)
+        .testIfErrorContains("unsupported operand type for -: 'string'", "-'foo'");
   }
 
   @Test
@@ -213,6 +217,18 @@ public class EvaluationTest extends EvaluationTestCase {
   }
 
   @Test
+  public void testCheckedArithmetic() throws Exception {
+    new SkylarkTest("--incompatible_checked_arithmetic=true")
+        .testIfErrorContains("integer overflow", "2000000000 + 2000000000")
+        .testIfErrorContains("integer overflow", "1234567890 * 987654321")
+        .testIfErrorContains("integer overflow", "- 2000000000 - 2000000000")
+
+        // literal 2147483648 is not allowed, so we compute it
+        .setUp("minint = - 2147483647 - 1")
+        .testIfErrorContains("integer overflow", "-minint");
+  }
+
+  @Test
   public void testOperatorPrecedence() throws Exception {
     newTest()
         .testStatement("2 + 3 * 4", 14)
@@ -359,6 +375,19 @@ public class EvaluationTest extends EvaluationTestCase {
   }
 
   @Test
+  public void testDictWithDuplicatedKey() throws Exception {
+    new SkylarkTest("--incompatible_dict_literal_has_no_duplicates=true")
+        .testIfErrorContains(
+            "Duplicated key \"str\" when creating dictionary", "{'str': 1, 'x': 2, 'str': 3}");
+  }
+
+  @Test
+  public void testDictAllowDuplicatedKey() throws Exception {
+    new SkylarkTest("--incompatible_dict_literal_has_no_duplicates=false")
+        .testStatement("{'str': 1, 'x': 2, 'str': 3}", ImmutableMap.of("str", 3, "x", 2));
+  }
+
+  @Test
   public void testRecursiveTupleDestructuring() throws Exception {
     newTest()
         .setUp("((a, b), (c, d)) = [(1, 2), (3, 4)]")
@@ -408,14 +437,6 @@ public class EvaluationTest extends EvaluationTestCase {
     newTest().testStatement("{x : x for x in [1, 2, 1]}", ImmutableMap.of(1, 1, 2, 2))
         .testStatement("{y : y for y in ['ab', 'c', 'a' + 'b']}",
             ImmutableMap.of("ab", "ab", "c", "c"));
-  }
-
-  @Test
-  public void testDictComprehensions_ToString() throws Exception {
-    assertThat(parseExpression("{x : x for x in [1, 2]}").toString())
-        .isEqualTo("{x: x for x in [1, 2]}");
-    assertThat(parseExpression("{x + 'a' : x for x in [1, 2]}").toString())
-        .isEqualTo("{x + \"a\": x for x in [1, 2]}");
   }
 
   @Test
@@ -576,30 +597,68 @@ public class EvaluationTest extends EvaluationTestCase {
     newTest().testStatement("not 'a' in ['a'] or 0", 0);
   }
 
-  private Object createObjWithStr() {
+  private SkylarkValue createObjWithStr() {
+    return new SkylarkValue() {
+      @Override
+      public void repr(SkylarkPrinter printer) {
+        printer.append("<str marker>");
+      }
+
+      @Override
+      public void reprLegacy(SkylarkPrinter printer) {
+        printer.append("<str legacy marker>");
+      }
+
+      @Override
+      public boolean isImmutable() {
+        return false;
+      }
+    };
+  }
+
+  private Object createUnknownObj() {
     return new Object() {
       @Override
       public String toString() {
-        return "str marker";
+        return "<unknown object>";
       }
     };
   }
 
   @Test
   public void testPercOnObject() throws Exception {
-    newTest().update("obj", createObjWithStr()).testStatement("'%s' % obj", "str marker");
+    newTest("--incompatible_descriptive_string_representations=true")
+        .update("obj", createObjWithStr())
+        .testStatement("'%s' % obj", "<str marker>");
+    newTest("--incompatible_descriptive_string_representations=false")
+        .update("obj", createObjWithStr())
+        .testStatement("'%s' % obj", "<str legacy marker>");
+    newTest()
+        .update("unknown", createUnknownObj())
+        .testStatement("'%s' % unknown", "<unknown object>");
   }
 
   @Test
   public void testPercOnObjectList() throws Exception {
-    newTest().update("obj", createObjWithStr()).testStatement("'%s %s' % (obj, obj)",
-        "str marker str marker");
+    newTest("--incompatible_descriptive_string_representations=true")
+        .update("obj", createObjWithStr())
+        .testStatement("'%s %s' % (obj, obj)", "<str marker> <str marker>");
+    newTest("--incompatible_descriptive_string_representations=false")
+        .update("obj", createObjWithStr())
+        .testStatement("'%s %s' % (obj, obj)", "<str legacy marker> <str legacy marker>");
+    newTest()
+        .update("unknown", createUnknownObj())
+        .testStatement("'%s %s' % (unknown, unknown)", "<unknown object> <unknown object>");
   }
 
   @Test
   public void testPercOnObjectInvalidFormat() throws Exception {
-    newTest().update("obj", createObjWithStr()).testIfExactError(
-        "invalid argument str marker for format pattern %d", "'%d' % obj");
+    newTest("--incompatible_descriptive_string_representations=true")
+        .update("obj", createObjWithStr())
+        .testIfExactError("invalid argument <str marker> for format pattern %d", "'%d' % obj");
+    newTest("--incompatible_descriptive_string_representations=false")
+        .update("obj", createObjWithStr())
+        .testIfExactError("invalid argument <str marker> for format pattern %d", "'%d' % obj");
   }
 
   @Test

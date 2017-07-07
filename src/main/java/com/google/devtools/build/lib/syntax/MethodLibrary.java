@@ -14,11 +14,12 @@
 
 package com.google.devtools.build.lib.syntax;
 
+import static java.util.stream.Collectors.joining;
+
 import com.google.common.base.CharMatcher;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Ordering;
 import com.google.devtools.build.lib.collect.nestedset.NestedSet;
@@ -962,7 +963,7 @@ public class MethodLibrary {
             Location loc,
             Environment env)
             throws EvalException {
-          return new FormatParser(loc)
+          return new FormatParser(env, loc)
               .format(
                   self,
                   args.getImmutableList(),
@@ -1547,23 +1548,6 @@ public class MethodLibrary {
     }
   };
 
-  // unary minus
-  @SkylarkSignature(
-    name = "-",
-    returnType = Integer.class,
-    documented = false,
-    doc = "Unary minus operator.",
-    parameters = {
-      @Param(name = "num", type = Integer.class, doc = "The number to negate.")
-    }
-  )
-  private static final BuiltinFunction minus =
-      new BuiltinFunction("-") {
-        public Integer invoke(Integer num) throws ConversionException {
-          return -num;
-        }
-      };
-
   @SkylarkSignature(
     name = "tuple",
     returnType = Tuple.class,
@@ -1607,11 +1591,20 @@ public class MethodLibrary {
     returnType = Integer.class,
     doc = "Returns the length of a string, list, tuple, depset, or dictionary.",
     parameters = {@Param(name = "x", doc = "The object to check length of.")},
-    useLocation = true
+    useLocation = true,
+    useEnvironment = true
   )
   private static final BuiltinFunction len =
       new BuiltinFunction("len") {
-        public Integer invoke(Object x, Location loc) throws EvalException {
+        public Integer invoke(Object x, Location loc, Environment env) throws EvalException {
+          if (env.getSemantics().incompatibleDepsetIsNotIterable && x instanceof SkylarkNestedSet) {
+            throw new EvalException(
+                loc,
+                EvalUtils.getDataTypeName(x)
+                    + " is not iterable. You may use `len(<depset>.to_list())` instead. Use "
+                    + "--incompatible_depset_is_not_iterable=false to temporarily disable this "
+                    + "check.");
+          }
           int l = EvalUtils.size(x);
           if (l == -1) {
             throw new EvalException(loc, EvalUtils.getDataTypeName(x) + " is not iterable");
@@ -1620,25 +1613,37 @@ public class MethodLibrary {
         }
       };
 
-  @SkylarkSignature(name = "str", returnType = String.class, doc =
-      "Converts any object to string. This is useful for debugging."
-      + "<pre class=\"language-python\">str(\"ab\") == \"ab\"</pre>",
-      parameters = {@Param(name = "x", doc = "The object to convert.")})
-  private static final BuiltinFunction str = new BuiltinFunction("str") {
-    public String invoke(Object x) {
-      return Printer.str(x);
-    }
-  };
+  @SkylarkSignature(
+    name = "str",
+    returnType = String.class,
+    doc =
+        "Converts any object to string. This is useful for debugging."
+            + "<pre class=\"language-python\">str(\"ab\") == \"ab\"</pre>",
+    parameters = {@Param(name = "x", doc = "The object to convert.")},
+    useEnvironment = true
+  )
+  private static final BuiltinFunction str =
+      new BuiltinFunction("str") {
+        public String invoke(Object x, Environment env) {
+          return Printer.getPrinter(env).str(x).toString();
+        }
+      };
 
-  @SkylarkSignature(name = "repr", returnType = String.class, doc =
-      "Converts any object to a string representation. This is useful for debugging.<br>"
-      + "<pre class=\"language-python\">str(\"ab\") == \\\"ab\\\"</pre>",
-      parameters = {@Param(name = "x", doc = "The object to convert.")})
-  private static final BuiltinFunction repr = new BuiltinFunction("repr") {
-    public String invoke(Object x) {
-      return Printer.repr(x);
-    }
-  };
+  @SkylarkSignature(
+    name = "repr",
+    returnType = String.class,
+    doc =
+        "Converts any object to a string representation. This is useful for debugging.<br>"
+            + "<pre class=\"language-python\">str(\"ab\") == \\\"ab\\\"</pre>",
+    parameters = {@Param(name = "x", doc = "The object to convert.")},
+    useEnvironment = true
+  )
+  private static final BuiltinFunction repr =
+      new BuiltinFunction("repr") {
+        public String invoke(Object x, Environment env) {
+          return Printer.getPrinter(env).repr(x).toString();
+        }
+      };
 
   @SkylarkSignature(name = "bool", returnType = Boolean.class,
       doc = "Constructor for the bool type. "
@@ -2071,39 +2076,51 @@ public class MethodLibrary {
         }
       };
 
-  @SkylarkSignature(name = "print", returnType = Runtime.NoneType.class,
-      doc = "Prints <code>args</code> as output. It will be prefixed with the string <code>"
-          + "\"WARNING\"</code> and the location (file and line number) of this call. It can be "
-          + "used for debugging."
-          + "<p>Using <code>print</code> in production code is discouraged due to the spam it "
-          + "creates for users. For deprecations, prefer a hard error using <a href=\"#fail\">"
-          + "fail()</a> when possible.",
-      parameters = {
-        @Param(name = "sep", type = String.class, defaultValue = "' '",
-            named = true, positional = false,
-            doc = "The separator string between the objects, default is space (\" \").")},
-      // NB: as compared to Python3, we're missing optional named-only arguments 'end' and 'file'
-      extraPositionals = @Param(name = "args", doc = "The objects to print."),
-      useLocation = true, useEnvironment = true)
-  private static final BuiltinFunction print = new BuiltinFunction("print") {
-    public Runtime.NoneType invoke(String sep, SkylarkList<?> starargs,
-        Location loc, Environment env) throws EvalException {
-      String msg = Joiner.on(sep).join(Iterables.transform(starargs,
-              new com.google.common.base.Function<Object, String>() {
-                @Override
-                public String apply(Object input) {
-                  return Printer.str(input);
-                }}));
-      // As part of the integration test "skylark_flag_test.sh", if the
-      // "--internal_skylark_flag_test_canary" flag is enabled, append an extra marker string to the
-      // output.
-      if (env.getSemantics().skylarkFlagTestCanary) {
-        msg += "<== skylark flag test ==>";
-      }
-      env.handleEvent(Event.warn(loc, msg));
-      return Runtime.NONE;
-    }
-  };
+  @SkylarkSignature(
+    name = "print",
+    returnType = Runtime.NoneType.class,
+    doc =
+        "Prints <code>args</code> as output. It will be prefixed with the string <code>"
+            + "\"WARNING\"</code> and the location (file and line number) of this call. It can be "
+            + "used for debugging."
+            + "<p>Using <code>print</code> in production code is discouraged due to the spam it "
+            + "creates for users. For deprecations, prefer a hard error using <a href=\"#fail\">"
+            + "fail()</a> when possible.",
+    parameters = {
+      @Param(
+        name = "sep",
+        type = String.class,
+        defaultValue = "' '",
+        named = true,
+        positional = false,
+        doc = "The separator string between the objects, default is space (\" \")."
+      )
+    },
+    // NB: as compared to Python3, we're missing optional named-only arguments 'end' and 'file'
+    extraPositionals = @Param(name = "args", doc = "The objects to print."),
+    useLocation = true,
+    useEnvironment = true
+  )
+  private static final BuiltinFunction print =
+      new BuiltinFunction("print") {
+        public Runtime.NoneType invoke(
+            String sep, SkylarkList<?> starargs, Location loc, Environment env)
+            throws EvalException {
+          String msg =
+              starargs
+                  .stream()
+                  .map((Object o) -> Printer.getPrinter(env).str(o).toString())
+                  .collect(joining(sep));
+          // As part of the integration test "skylark_flag_test.sh", if the
+          // "--internal_skylark_flag_test_canary" flag is enabled, append an extra marker string to
+          // the output.
+          if (env.getSemantics().skylarkFlagTestCanary) {
+            msg += "<== skylark flag test ==>";
+          }
+          env.handleEvent(Event.warn(loc, msg));
+          return Runtime.NONE;
+        }
+      };
 
   @SkylarkSignature(
     name = "zip",
@@ -2212,7 +2229,7 @@ public class MethodLibrary {
   static final List<BaseFunction> defaultGlobalFunctions =
       ImmutableList.<BaseFunction>of(
           all, any, bool, dict, dir, fail, getattr, hasattr, hash, enumerate, int_, len, list, max,
-          min, minus, print, range, repr, reversed, sorted, str, tuple, zip);
+          min, print, range, repr, reversed, sorted, str, tuple, zip);
 
   static {
     SkylarkSignatureProcessor.configureSkylarkFunctions(MethodLibrary.class);

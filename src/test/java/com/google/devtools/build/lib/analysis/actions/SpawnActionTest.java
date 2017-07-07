@@ -493,8 +493,8 @@ public class SpawnActionTest extends BuildViewTestCase {
     scratch.file(
         "a/def.bzl",
         "def _aspect_impl(target, ctx):",
-        "  f = ctx.new_file('foo.txt')",
-        "  ctx.action(outputs = [f], command = 'echo foo > \"$1\"')",
+        "  f = ctx.actions.declare_file('foo.txt')",
+        "  ctx.actions.run_shell(outputs = [f], command = 'echo foo > \"$1\"')",
         "  return struct(output=f)",
         "def _rule_impl(ctx):",
         "  return struct(files=depset([artifact.output for artifact in ctx.attr.deps]))",
