@@ -23,15 +23,16 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
+import com.google.devtools.build.lib.actions.Action;
+import com.google.devtools.build.lib.actions.ActionEnvironment;
 import com.google.devtools.build.lib.actions.ActionExecutionContext;
 import com.google.devtools.build.lib.actions.ActionInput;
 import com.google.devtools.build.lib.actions.ActionOwner;
 import com.google.devtools.build.lib.actions.Artifact;
 import com.google.devtools.build.lib.actions.BaseSpawn;
 import com.google.devtools.build.lib.actions.ExecException;
-import com.google.devtools.build.lib.actions.Executor;
 import com.google.devtools.build.lib.actions.ParameterFile;
+import com.google.devtools.build.lib.actions.ParameterFile.ParameterFileType;
 import com.google.devtools.build.lib.actions.ResourceSet;
 import com.google.devtools.build.lib.actions.Spawn;
 import com.google.devtools.build.lib.actions.SpawnActionContext;
@@ -111,8 +112,8 @@ public class JavaHeaderCompileAction extends SpawnAction {
         LOCAL_RESOURCES,
         transitiveCommandLine,
         false,
-        JavaCompileAction.UTF8_ENVIRONMENT,
-        /*executionInfo=*/ ImmutableSet.<String>of(),
+        // TODO(#3320): This is missing the config's action environment.
+        new ActionEnvironment(JavaCompileAction.UTF8_ENVIRONMENT),
         progressMessage,
         "Turbine");
     this.directInputs = checkNotNull(directInputs);
@@ -131,8 +132,7 @@ public class JavaHeaderCompileAction extends SpawnAction {
   @Override
   protected void internalExecute(ActionExecutionContext actionExecutionContext)
       throws ExecException, InterruptedException {
-    Executor executor = actionExecutionContext.getExecutor();
-    SpawnActionContext context = getContext(executor);
+    SpawnActionContext context = getContext(actionExecutionContext);
     try {
       context.exec(getDirectSpawn(), actionExecutionContext);
     } catch (ExecException e) {
@@ -323,7 +323,7 @@ public class JavaHeaderCompileAction extends SpawnAction {
       ruleContext.registerAction(buildInternal(javaToolchain));
     }
 
-    private ActionAnalysisMetadata[] buildInternal(JavaToolchainProvider javaToolchain) {
+    private Action[] buildInternal(JavaToolchainProvider javaToolchain) {
       checkNotNull(outputDepsProto, "outputDepsProto must not be null");
       checkNotNull(sourceFiles, "sourceFiles must not be null");
       checkNotNull(sourceJars, "sourceJars must not be null");
@@ -366,26 +366,36 @@ public class JavaHeaderCompileAction extends SpawnAction {
       // disabled, or the action doesn't distinguish between direct and transitive deps, so
       // use a plain SpawnAction to invoke turbine.
       if ((noFallback || directJars.isEmpty()) && !requiresAnnotationProcessing) {
-        NestedSet<Artifact> classpath = !directJars.isEmpty() ? directJars : classpathEntries;
+        SpawnAction.Builder builder = new SpawnAction.Builder();
+        NestedSet<Artifact> classpath;
+        if (!directJars.isEmpty() || classpathEntries.isEmpty()) {
+          classpath = directJars;
+        } else {
+          classpath = classpathEntries;
+          // Transitive classpath actions may exceed the command line length limit.
+          builder.alwaysUseParameterFile(ParameterFileType.SHELL_QUOTED);
+        }
         CustomCommandLine.Builder commandLine =
-            baseCommandLine(getBaseArgs(javaToolchain), classpath);
+            baseCommandLine(CustomCommandLine.builder(), classpath);
         if (noFallback) {
           commandLine.add("--nojavac_fallback");
         }
-        return new ActionAnalysisMetadata[] {
-          new SpawnAction(
-              ruleContext.getActionOwner(),
-              tools,
-              NestedSetBuilder.fromNestedSet(baseInputs).addTransitive(classpath).build(),
-              outputs,
-              LOCAL_RESOURCES,
-              commandLine.build(),
-              false,
-              JavaCompileAction.UTF8_ENVIRONMENT,
-              /*executionInfo=*/ ImmutableSet.<String>of(),
-              getProgressMessage(),
-              "Turbine")
-        };
+        return builder
+            .addTools(tools)
+            .addTransitiveInputs(baseInputs)
+            .addTransitiveInputs(classpath)
+            .addOutputs(outputs)
+            .setCommandLine(commandLine.build())
+            .setJarExecutable(
+                JavaCommon.getHostJavaExecutable(ruleContext),
+                javaToolchain.getHeaderCompiler(),
+                ImmutableList.<String>builder()
+                    .add("-Xbootclasspath/p:" + javacJar.getExecPath())
+                    .addAll(javaToolchain.getJvmOptions())
+                    .build())
+            .setMnemonic("Turbine")
+            .setProgressMessage(getProgressMessage())
+            .build(ruleContext);
       }
 
       CommandLine transitiveParams = transitiveCommandLine();
@@ -415,7 +425,7 @@ public class JavaHeaderCompileAction extends SpawnAction {
       if (requiresAnnotationProcessing) {
         // turbine doesn't support API-generating annotation processors, so skip the two-tiered
         // turbine/javac-turbine action and just use SpawnAction to invoke javac-turbine.
-        return new ActionAnalysisMetadata[] {
+        return new Action[] {
           parameterFileWriteAction,
           new SpawnAction(
               ruleContext.getActionOwner(),
@@ -425,8 +435,8 @@ public class JavaHeaderCompileAction extends SpawnAction {
               LOCAL_RESOURCES,
               transitiveCommandLine,
               false,
-              JavaCompileAction.UTF8_ENVIRONMENT,
-              /*executionInfo=*/ ImmutableSet.<String>of(),
+              // TODO(b/63280599): This is missing the config's action environment.
+              new ActionEnvironment(JavaCompileAction.UTF8_ENVIRONMENT),
               getProgressMessageWithAnnotationProcessors(),
               "JavacTurbine")
         };
@@ -443,7 +453,7 @@ public class JavaHeaderCompileAction extends SpawnAction {
           NestedSetBuilder.fromNestedSet(baseInputs).addTransitive(directJars).build();
       CustomCommandLine directCommandLine =
           baseCommandLine(getBaseArgs(javaToolchain), directJars).build();
-      return new ActionAnalysisMetadata[] {
+      return new Action[] {
         parameterFileWriteAction,
         new JavaHeaderCompileAction(
             ruleContext.getActionOwner(),
@@ -476,7 +486,7 @@ public class JavaHeaderCompileAction extends SpawnAction {
 
     private CustomCommandLine.Builder getBaseArgs(JavaToolchainProvider javaToolchain) {
       return CustomCommandLine.builder()
-          .addPath(ruleContext.getHostConfiguration().getFragment(Jvm.class).getJavaExecutable())
+          .addPath(JavaCommon.getHostJavaExecutable(ruleContext))
           .add("-Xverify:none")
           .add(javaToolchain.getJvmOptions())
           .addPaths("-Xbootclasspath/p:%s", javacJar.getExecPath())

@@ -33,10 +33,13 @@ import com.google.devtools.build.lib.syntax.Type;
 import com.google.devtools.common.options.EnumConverter;
 import com.google.devtools.common.options.OptionsParsingException;
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.LinkedHashMap;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * Filters resources based on their qualifiers.
@@ -202,7 +205,7 @@ public class ResourceFilter {
     ImmutableList.Builder<FolderConfiguration> filterBuilder = ImmutableList.builder();
     for (String filter : configFilters) {
       addIfNotNull(
-          getFolderConfiguration(filter),
+          getFolderConfiguration(ruleErrorConsumer, filter),
           filter,
           filterBuilder,
           ruleErrorConsumer,
@@ -211,27 +214,106 @@ public class ResourceFilter {
 
     return filterBuilder.build();
   }
+  private FolderConfiguration getFolderConfiguration(
+      RuleErrorConsumer ruleErrorConsumer, String filter) {
 
-  private static FolderConfiguration getFolderConfiguration(String filter) {
-    /*
-     * Aapt used to expect locale configurations of form 'en_US'. It now also supports the correct
-     * 'en-rUS' format. For backwards comparability, use a regex to convert filters with locales in
-     * the old format to filters with locales of the correct format.
-     *
-     * The correct format for locales is defined at
-     * https://developer.android.com/guide/topics/resources/providing-resources.html#LocaleQualifier
-     *
-     * TODO(bazel-team): Migrate consumers away from the old Aapt locale format, then remove this
-     * replacement.
-     *
-     * The regex is a bit complicated to avoid modifying potential new qualifiers that contain
-     * underscores. Specifically, it searches for the entire beginning of the resource qualifier,
-     * including (optionally) MCC and MNC, and then the locale itself.
-     */
-    String fixedFilter =
-        filter.replaceFirst("^((mcc[0-9]{3}-(mnc[0-9]{3}-)?)?[a-z]{2})_([A-Z]{2})", "$1-r$4");
-    return FolderConfiguration.getConfigForQualifierString(fixedFilter);
+    // Clean up deprecated representations of resource qualifiers that FolderConfiguration can't
+    // handle.
+    for (DeprecatedQualifierHandler handler : deprecatedQualifierHandlers) {
+      filter = handler.fixAttributeIfNeeded(ruleErrorConsumer, filter);
+    }
+
+    return FolderConfiguration.getConfigForQualifierString(filter);
   }
+
+  private static final class DeprecatedQualifierHandler {
+    private final Pattern pattern;
+    private final String replacement;
+    private final String description;
+
+    private boolean warnedForAttribute = false;
+    private boolean warnedForResources = false;
+
+    private DeprecatedQualifierHandler(String pattern, String replacement, String description) {
+      this.pattern = Pattern.compile(pattern);
+      this.replacement = replacement;
+      this.description = description;
+    }
+
+    private String fixAttributeIfNeeded(RuleErrorConsumer ruleErrorConsumer, String qualifier) {
+      Matcher matcher = pattern.matcher(qualifier);
+
+      if (!matcher.matches()) {
+        return qualifier;
+      }
+
+      String fixed = matcher.replaceFirst(replacement);
+      // We don't want to spam users. Only warn about this kind of issue once per target.
+      // TODO(asteinb): Will this cause problems when settings are propagated via dynamic
+      // configuration?
+      if (!warnedForAttribute) {
+        ruleErrorConsumer.attributeWarning(
+            RESOURCE_CONFIGURATION_FILTERS_NAME,
+            String.format(
+                "When referring to %s, use of qualifier '%s' is deprecated. Use '%s' instead.",
+                description, matcher.group(), fixed));
+        warnedForAttribute = true;
+      }
+      return fixed;
+    }
+
+    private String fixResourceIfNeeded(
+        RuleErrorConsumer ruleErrorConsumer, String qualifier, String resourceFolder) {
+      Matcher matcher = pattern.matcher(qualifier);
+
+      if (!matcher.matches()) {
+        return qualifier;
+      }
+
+      String fixed = matcher.replaceFirst(replacement);
+
+      // We don't want to spam users. Only warn about this kind of issue once per target.
+      // TODO(asteinb): Will this cause problems when settings are propagated via dynamic
+      // configuration?
+      if (!warnedForResources) {
+        warnedForResources = true;
+
+        ruleErrorConsumer.ruleWarning(
+            String.format(
+                "For resource folder %s, when referring to %s, use of qualifier '%s' is deprecated."
+                    + " Use '%s' instead.",
+                resourceFolder, description, matcher.group(), fixed));
+      }
+
+      return fixed;
+    }
+  }
+
+  /** List of deprecated qualifiers that should currently by handled with a warning */
+  private final List<DeprecatedQualifierHandler> deprecatedQualifierHandlers = ImmutableList.of(
+      /*
+       * Aapt used to expect locale configurations of form 'en_US'. It now also supports the correct
+       * 'en-rUS' format. For backwards comparability, use a regex to convert filters with locales
+       * in the old format to filters with locales of the correct format.
+       *
+       * The correct format for locales is defined at
+       * https://developer.android.com/guide/topics/resources/providing-resources.html#LocaleQualifier
+       *
+       * TODO(bazel-team): Migrate consumers away from the old Aapt locale format, then remove this
+       * replacement.
+       *
+       * The regex is a bit complicated to avoid modifying potential new qualifiers that contain
+       * underscores. Specifically, it searches for the entire beginning of the resource qualifier,
+       * including (optionally) MCC and MNC, and then the locale itself.
+       */
+      new DeprecatedQualifierHandler(
+          "^((mcc[0-9]{3}-(mnc[0-9]{3}-)?)?[a-z]{2})_([A-Z]{2}).*",
+          "$1-r$4", "locale qualifiers with regions"),
+      new DeprecatedQualifierHandler(
+          "sr[_\\-]r?Latn.*", "b+sr+Latn", "Serbian in Latin characters"),
+      new DeprecatedQualifierHandler(
+          "es[_\\-]419.*", "b+es+419", "Spanish for Latin America and the Caribbean")
+  );
 
   private ImmutableList<Density> getDensities(RuleErrorConsumer ruleErrorConsumer) {
     ImmutableList.Builder<Density> densityBuilder = ImmutableList.builder();
@@ -305,12 +387,6 @@ public class ResourceFilter {
       return artifacts;
     }
 
-    /*
-     * Build an ImmutableSet rather than an ImmutableList to remove duplicate Artifacts in the case
-     * where one Artifact is the best option for multiple densities.
-     */
-    ImmutableSet.Builder<Artifact> builder = ImmutableSet.builder();
-
     List<BestArtifactsForDensity> bestArtifactsForAllDensities = new ArrayList<>();
     for (Density density : getDensities(ruleErrorConsumer)) {
       bestArtifactsForAllDensities.add(new BestArtifactsForDensity(ruleErrorConsumer, density));
@@ -318,6 +394,7 @@ public class ResourceFilter {
 
     ImmutableList<FolderConfiguration> folderConfigs = getConfigurationFilters(ruleErrorConsumer);
 
+    Set<Artifact> keptArtifactsNotFilteredByDensity = new HashSet<>();
     for (Artifact artifact : artifacts) {
       FolderConfiguration config = getConfigForArtifact(ruleErrorConsumer, artifact);
 
@@ -329,7 +406,7 @@ public class ResourceFilter {
       }
 
       if (!shouldFilterByDensity(artifact)) {
-        builder.add(artifact);
+        keptArtifactsNotFilteredByDensity.add(artifact);
         continue;
       }
 
@@ -338,35 +415,43 @@ public class ResourceFilter {
       }
     }
 
-    for (BestArtifactsForDensity bestArtifactsForDensity : bestArtifactsForAllDensities) {
-      builder.addAll(bestArtifactsForDensity.get());
-    }
-
-    ImmutableSet<Artifact> keptArtifacts = builder.build();
+    // Build the output by iterating through the input so that contents of both have the same order.
+    ImmutableList.Builder<Artifact> builder = ImmutableList.builder();
     for (Artifact artifact : artifacts) {
-      if (keptArtifacts.contains(artifact)) {
-        continue;
+
+      boolean kept = false;
+      if (keptArtifactsNotFilteredByDensity.contains(artifact)) {
+        builder.add(artifact);
+        kept = true;
+      } else {
+        for (BestArtifactsForDensity bestArtifactsForDensity : bestArtifactsForAllDensities) {
+          if (bestArtifactsForDensity.contains(artifact)) {
+            builder.add(artifact);
+            kept = true;
+            break;
+          }
+        }
       }
 
-      String parentDir = artifact.getPath().getParentDirectory().getBaseName();
-      filteredResources.add(parentDir + "/" + artifact.getFilename());
+      if (!kept) {
+        String parentDir = artifact.getPath().getParentDirectory().getBaseName();
+        filteredResources.add(parentDir + "/" + artifact.getFilename());
+      }
     }
 
     // TODO(asteinb): We should only build a new list if some artifacts were filtered out. If
     // nothing was filtered, we can be more efficient by returning the original list instead.
-    return keptArtifacts.asList();
+    return builder.build();
   }
 
   /**
    * Tracks the best artifact for a desired density for each combination of filename and non-density
    * qualifiers.
    */
-  private static class BestArtifactsForDensity {
+  private class BestArtifactsForDensity {
     private final RuleErrorConsumer ruleErrorConsumer;
     private final Density desiredDensity;
-
-    // Use a LinkedHashMap to preserve determinism.
-    private final Map<String, Artifact> nameAndConfigurationToBestArtifact = new LinkedHashMap<>();
+    private final Map<String, Artifact> nameAndConfigurationToBestArtifact = new HashMap<>();
 
     public BestArtifactsForDensity(RuleErrorConsumer ruleErrorConsumer, Density density) {
       this.ruleErrorConsumer = ruleErrorConsumer;
@@ -392,9 +477,8 @@ public class ResourceFilter {
       }
     }
 
-    /** @return the collection of best Artifacts for this density. */
-    public Collection<Artifact> get() {
-      return nameAndConfigurationToBestArtifact.values();
+    public boolean contains(Artifact artifact) {
+      return nameAndConfigurationToBestArtifact.containsValue(artifact);
     }
 
     /**
@@ -461,9 +545,22 @@ public class ResourceFilter {
     }
   }
 
-  private static FolderConfiguration getConfigForArtifact(
+  private FolderConfiguration getConfigForArtifact(
       RuleErrorConsumer ruleErrorConsumer, Artifact artifact) {
     String containingFolder = getContainingFolder(artifact);
+
+    if (containingFolder.contains("-")) {
+      String[] parts = containingFolder.split("-", 2);
+      String prefix = parts[0];
+      String qualifiers = parts[1];
+
+      for (DeprecatedQualifierHandler handler : deprecatedQualifierHandlers) {
+        qualifiers = handler.fixResourceIfNeeded(ruleErrorConsumer, qualifiers, containingFolder);
+      }
+
+      containingFolder = String.format("%s-%s", prefix, qualifiers);
+    }
+
     FolderConfiguration config = FolderConfiguration.getConfigForFolder(containingFolder);
 
     if (config == null) {

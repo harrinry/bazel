@@ -20,6 +20,7 @@ import static org.junit.Assert.fail;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.testing.EqualsTester;
+import com.google.devtools.common.options.proto.OptionFilters.OptionEffectTag;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Map;
@@ -38,32 +39,52 @@ public class OptionsTest {
 
   public static class HttpOptions extends OptionsBase {
 
-    @Option(name = "host",
-            defaultValue = "www.google.com",
-            help = "The URL at which the server will be running.")
+    @Option(
+      name = "host",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "www.google.com",
+      help = "The URL at which the server will be running."
+    )
     public String host;
 
-    @Option(name = "port",
-            abbrev = 'p',
-            defaultValue = "80",
-            help = "The port at which the server will be running.")
+    @Option(
+      name = "port",
+      abbrev = 'p',
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "80",
+      help = "The port at which the server will be running."
+    )
     public int port;
 
-    @Option(name = "debug",
-            abbrev = 'd',
-            defaultValue = "false",
-            help = "debug")
+    @Option(
+      name = "debug",
+      abbrev = 'd',
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "false",
+      help = "debug"
+    )
     public boolean isDebugging;
 
-    @Option(name = "tristate",
-        abbrev = 't',
-        defaultValue = "auto",
-        help = "tri-state option returning auto by default")
+    @Option(
+      name = "tristate",
+      abbrev = 't',
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "auto",
+      help = "tri-state option returning auto by default"
+    )
     public TriState triState;
 
-    @Option(name = "special",
-            defaultValue = "null",
-            expansion = { "--host=special.google.com", "--port=8080"})
+    @Option(
+      name = "special",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null",
+      expansion = {"--host=special.google.com", "--port=8080"}
+    )
     public Void special;
 
     // Interestingly, the class needs to be public, or else the default constructor ends up not
@@ -71,9 +92,9 @@ public class OptionsTest {
     /** SpecialExpansion */
     public static class SpecialExpansion implements ExpansionFunction {
       @Override
-      public ImmutableList<String> getExpansion(IsolatedOptionsData optionsData) {
+      public ImmutableList<String> getExpansion(ExpansionContext context) {
         TreeSet<String> flags = new TreeSet<>();
-        for (Map.Entry<String, ?> entry : optionsData.getAllNamedFields()) {
+        for (Map.Entry<String, ?> entry : context.getOptionsData().getAllNamedFields()) {
           if (entry.getKey().startsWith("specialexp_")) {
             flags.add("--" + entry.getKey());
           }
@@ -82,14 +103,55 @@ public class OptionsTest {
       }
     }
 
-    @Option(name = "specialexp_foo", defaultValue = "false")
+    /** VariableExpansion */
+    public static class VariableExpansion implements ExpansionFunction {
+      @Override
+      public ImmutableList<String> getExpansion(ExpansionContext context)
+          throws OptionsParsingException {
+        String value = context.getUnparsedValue();
+        if (value == null) {
+          throw new ExpansionNeedsValueException("Expansion value not set.");
+        }
+        if (value.equals("foo_bar")) {
+          return ImmutableList.<String>of("--specialexp_foo", "--specialexp_bar");
+        }
+
+        throw new OptionsParsingException("Unexpected expansion argument: " + value);
+      }
+    }
+
+    @Option(
+      name = "specialexp_foo",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "false"
+    )
     public boolean specialExpFoo;
 
-    @Option(name = "specialexp_bar", defaultValue = "false")
+    @Option(
+      name = "specialexp_bar",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "false"
+    )
     public boolean specialExpBar;
 
-    @Option(name = "specialexp", defaultValue = "null", expansionFunction = SpecialExpansion.class)
+    @Option(
+      name = "specialexp",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null",
+      expansionFunction = SpecialExpansion.class
+    )
     public Void specialExp;
+
+
+    @Option(
+        name = "dynamicexp",
+        documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+        effectTags = {OptionEffectTag.NO_OP},
+        defaultValue = "null", expansionFunction = VariableExpansion.class)
+    public Void variableExpansion;
   }
 
   @Test
@@ -365,15 +427,23 @@ public class OptionsTest {
   }
 
   public static class NullTestOptions extends OptionsBase {
-    @Option(name = "host",
-            defaultValue = "null",
-            help = "The URL at which the server will be running.")
+    @Option(
+      name = "host",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null",
+      help = "The URL at which the server will be running."
+    )
     public String host;
 
-    @Option(name = "none",
-        defaultValue = "null",
-        expansion = {"--host=www.google.com"},
-        help = "An expanded option.")
+    @Option(
+      name = "none",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null",
+      expansion = {"--host=www.google.com"},
+      help = "An expanded option."
+    )
     public Void none;
   }
 
@@ -410,11 +480,14 @@ public class OptionsTest {
 
   public static class UsesCustomConverter extends OptionsBase {
 
-    @Option(name = "url",
-            defaultValue = "http://www.google.com/",
-            converter = MyURLConverter.class)
+    @Option(
+      name = "url",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "http://www.google.com/",
+      converter = MyURLConverter.class
+    )
     public URL url;
-
   }
 
   @Test
@@ -458,7 +531,12 @@ public class OptionsTest {
   }
 
   public static class J extends OptionsBase {
-    @Option(name = "j", defaultValue = "null")
+    @Option(
+      name = "j",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public String string;
   }
   @Test
@@ -468,7 +546,12 @@ public class OptionsTest {
   }
 
   public static class K extends OptionsBase {
-    @Option(name = "1", defaultValue = "null")
+    @Option(
+      name = "1",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.NO_OP},
+      defaultValue = "null"
+    )
     public int int1;
   }
   @Test
@@ -538,5 +621,24 @@ public class OptionsTest {
     Options<HttpOptions> options2 =
         Options.parse(HttpOptions.class, new String[] {"--specialexp_foo", "--specialexp_bar"});
     assertThat(options1.getOptions()).isEqualTo(options2.getOptions());
+  }
+
+  @Test
+  public void dynamicExpansionFunctionWorks() throws Exception {
+    Options<HttpOptions> options1 =
+        Options.parse(HttpOptions.class, new String[] {"--dynamicexp=foo_bar"});
+    Options<HttpOptions> options2 =
+        Options.parse(HttpOptions.class, new String[] {"--specialexp_foo", "--specialexp_bar"});
+    assertThat(options1.getOptions()).isEqualTo(options2.getOptions());
+  }
+
+  @Test
+  public void dynamicExpansionFunctionUnknowValue() throws Exception {
+    try {
+      Options.parse(HttpOptions.class, new String[] {"--dynamicexp=foo"});
+      fail("Unknown expansion argument should cause a failure.");
+    } catch (OptionsParsingException e) {
+      assertThat(e).hasMessage("Unexpected expansion argument: foo");
+    }
   }
 }

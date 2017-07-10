@@ -35,7 +35,6 @@ import com.google.devtools.build.lib.actions.CommandAction;
 import com.google.devtools.build.lib.actions.ExecException;
 import com.google.devtools.build.lib.actions.ExecutionInfoSpecifier;
 import com.google.devtools.build.lib.actions.ExecutionRequirements;
-import com.google.devtools.build.lib.actions.Executor;
 import com.google.devtools.build.lib.actions.ResourceSet;
 import com.google.devtools.build.lib.actions.extra.CppCompileInfo;
 import com.google.devtools.build.lib.actions.extra.EnvironmentVariable;
@@ -65,6 +64,8 @@ import com.google.devtools.build.skyframe.SkyFunction;
 import com.google.devtools.build.skyframe.SkyKey;
 import com.google.devtools.build.skyframe.SkyValue;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -449,23 +450,21 @@ public class CppCompileAction extends AbstractAction
   @Override
   public Iterable<Artifact> discoverInputs(ActionExecutionContext actionExecutionContext)
       throws ActionExecutionException, InterruptedException {
-    Executor executor = actionExecutionContext.getExecutor();
     Iterable<Artifact> initialResult;
 
     actionExecutionContext
-        .getExecutor()
         .getEventBus()
         .post(ActionStatusMessage.analysisStrategy(this));
     try {
       initialResult =
-          executor
+          actionExecutionContext
               .getContext(actionContext)
               .findAdditionalInputs(
                   this, actionExecutionContext, cppSemantics.getIncludeProcessing());
     } catch (ExecException e) {
       throw e.toActionExecutionException(
           "Include scanning of rule '" + getOwner().getLabel() + "'",
-          executor.getVerboseFailures(),
+          actionExecutionContext.getVerboseFailures(),
           this);
     }
 
@@ -506,7 +505,7 @@ public class CppCompileAction extends AbstractAction
     // to the set of inputs the caller may need to be aware of.
     Collection<Artifact> result = new HashSet<>();
     ArtifactResolver artifactResolver =
-        executor.getContext(IncludeScanningContext.class).getArtifactResolver();
+        actionExecutionContext.getContext(IncludeScanningContext.class).getArtifactResolver();
     for (Artifact artifact : initialResult) {
       result.addAll(specialInputsHandler.getInputsForIncludedFile(artifact, artifactResolver));
     }
@@ -877,40 +876,40 @@ public class CppCompileAction extends AbstractAction
       }
     }
     if (VALIDATION_DEBUG_WARN) {
-      synchronized (System.err) {
-        if (VALIDATION_DEBUG >= 2 || errors.hasProblems() || warnings.hasProblems()) {
-          if (errors.hasProblems()) {
-            System.err.println("ERROR: Include(s) were not in declared srcs:");
-          } else if (warnings.hasProblems()) {
-            System.err.println("WARN: Include(s) were not in declared srcs:");
-          } else {
-            System.err.println("INFO: Include(s) were OK for '" + getSourceFile()
-                + "', declared srcs:");
-          }
-          for (Artifact a : context.getDeclaredIncludeSrcs()) {
-            System.err.println("  '" + a.toDetailString() + "'");
-          }
-          System.err.println(" or under declared dirs:");
-          for (PathFragment f : Sets.newTreeSet(context.getDeclaredIncludeDirs())) {
-            System.err.println("  '" + f + "'");
-          }
-          System.err.println(" or under declared warn dirs:");
-          for (PathFragment f : Sets.newTreeSet(context.getDeclaredIncludeWarnDirs())) {
-            System.err.println("  '" + f + "'");
-          }
-          System.err.println(" with prefixes:");
-          for (PathFragment dirpath : context.getQuoteIncludeDirs()) {
-            System.err.println("  '" + dirpath + "'");
-          }
+      if (VALIDATION_DEBUG >= 2 || errors.hasProblems() || warnings.hasProblems()) {
+        StringWriter buffer = new StringWriter();
+        PrintWriter out = new PrintWriter(buffer);
+        if (errors.hasProblems()) {
+          out.println("ERROR: Include(s) were not in declared srcs:");
+        } else if (warnings.hasProblems()) {
+          out.println("WARN: Include(s) were not in declared srcs:");
+        } else {
+          out.println("INFO: Include(s) were OK for '" + getSourceFile()
+              + "', declared srcs:");
         }
+        for (Artifact a : context.getDeclaredIncludeSrcs()) {
+          out.println("  '" + a.toDetailString() + "'");
+        }
+        out.println(" or under declared dirs:");
+        for (PathFragment f : Sets.newTreeSet(context.getDeclaredIncludeDirs())) {
+          out.println("  '" + f + "'");
+        }
+        out.println(" or under declared warn dirs:");
+        for (PathFragment f : Sets.newTreeSet(context.getDeclaredIncludeWarnDirs())) {
+          out.println("  '" + f + "'");
+        }
+        out.println(" with prefixes:");
+        for (PathFragment dirpath : context.getQuoteIncludeDirs()) {
+          out.println("  '" + dirpath + "'");
+        }
+        eventHandler.handle(
+            Event.warn(buffer.toString()).withTag(Label.print(getOwner().getLabel())));
       }
     }
 
     if (warnings.hasProblems()) {
       eventHandler.handle(
-          Event.warn(
-              getOwner().getLocation(),
-              warnings.getMessage(this, getSourceFile()))
+          Event.warn(getOwner().getLocation(), warnings.getMessage(this, getSourceFile()))
               .withTag(Label.print(getOwner().getLabel())));
     }
     errors.assertProblemFree(this, getSourceFile());
@@ -1156,7 +1155,6 @@ public class CppCompileAction extends AbstractAction
           throws ActionExecutionException, InterruptedException {
     setModuleFileFlags();
 
-    Executor executor = actionExecutionContext.getExecutor();
     CppCompileActionContext.Reply reply;
     ShowIncludesFilter showIncludesFilterForStdout = null;
     ShowIncludesFilter showIncludesFilterForStderr = null;
@@ -1169,16 +1167,20 @@ public class CppCompileAction extends AbstractAction
       actionExecutionContext.getFileOutErr().setErrorFilter(showIncludesFilterForStderr);
     }
     try {
-      reply = executor.getContext(actionContext).execWithReply(this, actionExecutionContext);
+      reply = actionExecutionContext.getContext(actionContext)
+          .execWithReply(this, actionExecutionContext);
     } catch (ExecException e) {
-      throw e.toActionExecutionException("C++ compilation of rule '" + getOwner().getLabel() + "'",
-          executor.getVerboseFailures(), this);
+      throw e.toActionExecutionException(
+          "C++ compilation of rule '" + getOwner().getLabel() + "'",
+          actionExecutionContext.getVerboseFailures(),
+          this);
     }
     ensureCoverageNotesFilesExist();
 
     // This is the .d file scanning part.
-    IncludeScanningContext scanningContext = executor.getContext(IncludeScanningContext.class);
-    Path execRoot = executor.getExecRoot();
+    IncludeScanningContext scanningContext =
+        actionExecutionContext.getContext(IncludeScanningContext.class);
+    Path execRoot = actionExecutionContext.getExecRoot();
 
     NestedSet<Artifact> discoveredInputs;
     if (featureConfiguration.isEnabled(CppRuleClasses.PARSE_SHOWINCLUDES)) {
@@ -1205,7 +1207,7 @@ public class CppCompileAction extends AbstractAction
       validateInclusions(
           discoveredInputs,
           actionExecutionContext.getArtifactExpander(),
-          executor.getEventHandler());
+          actionExecutionContext.getEventHandler());
     }
   }
 
@@ -1322,7 +1324,7 @@ public class CppCompileAction extends AbstractAction
       throws ActionExecutionException, InterruptedException {
     Iterable<Artifact> scannedIncludes;
     try {
-      scannedIncludes = actionExecutionContext.getExecutor().getContext(actionContext)
+      scannedIncludes = actionExecutionContext.getContext(actionContext)
           .findAdditionalInputs(this, actionExecutionContext,  cppSemantics.getIncludeProcessing());
     } catch (ExecException e) {
       throw e.toActionExecutionException(this);

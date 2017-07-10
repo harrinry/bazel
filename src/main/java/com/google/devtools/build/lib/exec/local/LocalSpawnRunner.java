@@ -36,6 +36,8 @@ import com.google.devtools.build.lib.shell.Command;
 import com.google.devtools.build.lib.shell.CommandException;
 import com.google.devtools.build.lib.shell.CommandResult;
 import com.google.devtools.build.lib.util.NetUtil;
+import com.google.devtools.build.lib.util.OS;
+import com.google.devtools.build.lib.util.OsUtils;
 import com.google.devtools.build.lib.util.Preconditions;
 import com.google.devtools.build.lib.util.io.FileOutErr;
 import com.google.devtools.build.lib.vfs.Path;
@@ -79,6 +81,10 @@ public final class LocalSpawnRunner implements SpawnRunner {
   private final String productName;
   private final LocalEnvProvider localEnvProvider;
 
+  private static Path getProcessWrapper(Path execRoot, OS localOs) {
+    return execRoot.getRelative("_bin/process-wrapper" + OsUtils.executableExtension(localOs));
+  }
+
   public LocalSpawnRunner(
       Logger logger,
       AtomicInteger execCount,
@@ -87,19 +93,40 @@ public final class LocalSpawnRunner implements SpawnRunner {
       LocalExecutionOptions localExecutionOptions,
       ResourceManager resourceManager,
       boolean useProcessWrapper,
+      OS localOs,
       String productName,
       LocalEnvProvider localEnvProvider) {
     this.logger = logger;
     this.execRoot = execRoot;
     this.actionInputPrefetcher = Preconditions.checkNotNull(actionInputPrefetcher);
-    this.processWrapper = execRoot.getRelative("_bin/process-wrapper").getPathString();
-    this.localExecutionOptions = localExecutionOptions;
+    this.processWrapper = getProcessWrapper(execRoot, localOs).getPathString();
+    this.localExecutionOptions = Preconditions.checkNotNull(localExecutionOptions);
     this.hostName = NetUtil.findShortHostName();
     this.execCount = execCount;
     this.resourceManager = resourceManager;
     this.useProcessWrapper = useProcessWrapper;
     this.productName = productName;
     this.localEnvProvider = localEnvProvider;
+  }
+
+  public LocalSpawnRunner(
+      Path execRoot,
+      ActionInputPrefetcher actionInputPrefetcher,
+      LocalExecutionOptions localExecutionOptions,
+      ResourceManager resourceManager,
+      String productName,
+      LocalEnvProvider localEnvProvider) {
+    this(
+        Logger.getLogger(LocalSpawnRunner.class.getName()),
+        new AtomicInteger(),
+        execRoot,
+        actionInputPrefetcher,
+        localExecutionOptions,
+        resourceManager,
+        OS.getCurrent() != OS.WINDOWS && getProcessWrapper(execRoot, OS.getCurrent()).exists(),
+        OS.getCurrent(),
+        productName,
+        localEnvProvider);
   }
 
   @Override
@@ -230,10 +257,10 @@ public final class LocalSpawnRunner implements SpawnRunner {
       if (useProcessWrapper) {
         List<String> cmdLine = new ArrayList<>();
         cmdLine.add(processWrapper);
-        cmdLine.add(Float.toString(timeoutSeconds));
-        cmdLine.add(Double.toString(localExecutionOptions.localSigkillGraceSeconds));
-        cmdLine.add(getPathOrDevNull(outErr.getOutputPath()));
-        cmdLine.add(getPathOrDevNull(outErr.getErrorPath()));
+        cmdLine.add("--timeout=" + timeoutSeconds);
+        cmdLine.add("--kill_delay=" + localExecutionOptions.localSigkillGraceSeconds);
+        cmdLine.add("--stdout=" + getPathOrDevNull(outErr.getOutputPath()));
+        cmdLine.add("--stderr=" + getPathOrDevNull(outErr.getErrorPath()));
         cmdLine.addAll(spawn.getArguments());
         cmd = new Command(
             cmdLine.toArray(new String[0]),

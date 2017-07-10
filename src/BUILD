@@ -8,9 +8,9 @@ filegroup(
     srcs = select({
         ":darwin": ["//src/main/native:libunix.dylib"],
         ":darwin_x86_64": ["//src/main/native:libunix.dylib"],
-        ":windows": ["//src/main/native:windows_jni.dll"],
-        ":windows_msys": ["//src/main/native:windows_jni.dll"],
-        ":windows_msvc": ["//src/main/native:windows_jni.dll"],
+        ":windows": ["//src/main/native/windows:windows_jni.dll"],
+        ":windows_msys": ["//src/main/native/windows:windows_jni.dll"],
+        ":windows_msvc": ["//src/main/native/windows:windows_jni.dll"],
         "//conditions:default": ["//src/main/native:libunix.so"],
     }),
     visibility = [
@@ -81,7 +81,6 @@ OSX_DUMMY_TARGETS = [
     "src/tools/xcode/environment/environment_plist",
     "src/objc_tools/bundlemerge/bundlemerge_deploy.jar",
     "src/objc_tools/plmerge/plmerge_deploy.jar",
-    "src/objc_tools/xcodegen/xcodegen_deploy.jar",
     "src/tools/xcode/realpath/realpath",
     "src/tools/xcode/stdredirect/StdRedirect.dylib",
 ]
@@ -106,7 +105,6 @@ filegroup(
         "//src/tools/xcode/environment:environment_plist",
         "//src/objc_tools/bundlemerge:bundlemerge_deploy.jar",
         "//src/objc_tools/plmerge:plmerge_deploy.jar",
-        "//src/objc_tools/xcodegen:xcodegen_deploy.jar",
         "//src/tools/xcode/realpath:realpath",
         "//tools/osx:xcode_locator.m",
     ] + select({
@@ -126,6 +124,7 @@ filegroup(
 [genrule(
     name = "embedded_tools" + suffix,
     srcs = [
+        "BUILD.tools",
         ":create_embedded_tools.sh",
         "//tools:embedded_tools_srcs",
         "//third_party:gpl-srcs",
@@ -140,6 +139,9 @@ filegroup(
         "//src/tools/android/java/com/google/devtools/build/android/idlclass:embedded_tools",
         "//src/tools/android/java/com/google/devtools/build/android/dexer:embedded_tools",
         "//src/tools/android/java/com/google/devtools/build/android/ziputils:embedded_tools",
+        "//src/tools/singlejar:embedded_tools",
+        "//src/main/cpp/util:embedded_tools",
+        "//src/main/native:embedded_tools",
         "//src/main/protobuf:srcs",
         "//src/java_tools/buildjar:JavaBuilderDeploy",
         "//src/java_tools/buildjar:VanillaJavaBuilder_deploy.jar",
@@ -148,7 +150,9 @@ filegroup(
         "//src/java_tools/junitrunner/java/com/google/testing/junit/runner:ExperimentalRunner_deploy.jar",
         "//src/java_tools/junitrunner/java/com/google/testing/coverage:embedded_tools",
         "//third_party/ijar",
+        "//third_party/ijar:embedded_tools",
         "//third_party/java/jacoco:srcs",
+        "//third_party/zlib:embedded_tools",
     ] + select({
         ":darwin": [
             ":darwin_tools",
@@ -193,6 +197,9 @@ filegroup(
             "@openjdk_win//file",
         ],
         ":windows_msvc": [
+            "@openjdk_win//file",
+        ],
+        ":windows": [
             "@openjdk_win//file",
         ],
         "//conditions:default": [
@@ -355,8 +362,8 @@ filegroup(
         "//src/main/tools:srcs",
         "//src/objc_tools/bundlemerge:srcs",
         "//src/objc_tools/plmerge:srcs",
-        "//src/objc_tools/xcodegen:srcs",
         "//src/test/cpp:srcs",
+        "//src/test/docker:srcs",
         "//src/test/gen:srcs",
         "//src/test/native:srcs",
         "//src/test/java/com/google/devtools/build/android:srcs",
@@ -392,7 +399,7 @@ genrule(
         "@googleapis//:dist_jars",
     ],
     outs = ["derived_java_srcs.zip"],
-    cmd = "$(location :combine_derived_java_srcs.sh) $@ $(SRCS)",
+    cmd = "$(location :combine_derived_java_srcs.sh) $(JAVABASE) $@ $(SRCS)",
     tools = ["combine_derived_java_srcs.sh"],
     visibility = ["//:__pkg__"],
 )

@@ -55,8 +55,8 @@ public class SkylarkEvaluationTest extends EvaluationTest {
    * Skylark context
    */
   @Override
-  protected ModalTestCase newTest() {
-    return new SkylarkTest();
+  protected ModalTestCase newTest(String... skylarkOptions) {
+    return new SkylarkTest(skylarkOptions);
   }
 
   @Immutable
@@ -771,7 +771,7 @@ public class SkylarkEvaluationTest extends EvaluationTest {
         .update("mock", new Mock())
         .setUp("")
         .testIfExactError(
-            "too many arguments, in method with_params(int, bool, bool named, "
+            "unexpected keyword 'n', in method with_params(int, bool, bool named, "
                 + "bool posOrNamed, int n) of 'Mock'",
             "mock.with_params(1, True, named=True, posOrNamed=True, n=2)");
     new SkylarkTest()
@@ -877,6 +877,30 @@ public class SkylarkEvaluationTest extends EvaluationTest {
         .testStatement("str(depset([1, 3]) | depset([1, 2]))", "depset([1, 2, 3])")
         .testStatement("str(depset([1, 2]) | [1, 3])", "depset([1, 2, 3])")
         .testIfExactError("unsupported operand type(s) for |: 'int' and 'int'", "2 | 4");
+  }
+
+  @Test
+  public void testSetIsNotIterable() throws Exception {
+    new SkylarkTest("--incompatible_depset_is_not_iterable=true")
+        .testIfErrorContains("not iterable", "list(depset(['a', 'b']))")
+        .testIfErrorContains("not iterable", "max(depset([1, 2, 3]))")
+        .testIfErrorContains("not iterable", "1 in depset([1, 2, 3])")
+        .testIfErrorContains("not iterable", "sorted(depset(['a', 'b']))")
+        .testIfErrorContains("not iterable", "tuple(depset(['a', 'b']))")
+        .testIfErrorContains("not iterable", "[x for x in depset()]")
+        .testIfErrorContains("not iterable", "len(depset(['a']))");
+  }
+
+  @Test
+  public void testSetIsIterable() throws Exception {
+    new SkylarkTest("--incompatible_depset_is_not_iterable=false")
+        .testStatement("str(list(depset(['a', 'b'])))", "[\"a\", \"b\"]")
+        .testStatement("max(depset([1, 2, 3]))", 3)
+        .testStatement("1 in depset([1, 2, 3])", true)
+        .testStatement("str(sorted(depset(['b', 'a'])))", "[\"a\", \"b\"]")
+        .testStatement("str(tuple(depset(['a', 'b'])))", "(\"a\", \"b\")")
+        .testStatement("str([x for x in depset()])", "[]")
+        .testStatement("len(depset(['a']))", 1);
   }
 
   @Test
@@ -1353,6 +1377,10 @@ public class SkylarkEvaluationTest extends EvaluationTest {
 
     new SkylarkTest()
         .testIfErrorContains("type 'int' is not a collection", "[x2 + y2 for x2, y2 in (1, 2)]");
+
+    new SkylarkTest()
+        // returns [2] in Python, it's an error in Skylark
+        .testIfErrorContains("invalid lvalue", "[2 for [] in [()]]");
   }
 
   @Override

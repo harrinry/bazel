@@ -147,6 +147,16 @@ public class AndroidLibraryTest extends AndroidBuildViewTestCase {
   }
 
   @Test
+  public void testAndroidLibraryWithIdlPreprocessed() throws Exception {
+    scratchConfiguredTarget(
+        "java/com/google/android",
+        "lib",
+        "android_library(name  = 'lib',",
+        "    idl_srcs = ['src/android/Dummy.aidl'],",
+        "    idl_preprocessed = ['src/android/DummyParcelable.aidl'])");
+  }
+
+  @Test
   public void testCommandLineContainsTargetLabelAndRuleKind() throws Exception {
     scratch.file("java/android/BUILD",
         "android_library(name = 'a', srcs = ['A.java'])");
@@ -557,7 +567,8 @@ public class AndroidLibraryTest extends AndroidBuildViewTestCase {
 
   @Test
   public void testAidlLibAddsProguardSpecs() throws Exception {
-    scratch.file("sdk/BUILD",
+    scratch.file(
+        "sdk/BUILD",
         "android_sdk(name = 'sdk',",
         "            aapt = 'aapt',",
         "            adb = 'adb',",
@@ -572,8 +583,7 @@ public class AndroidLibraryTest extends AndroidBuildViewTestCase {
         "            main_dex_list_creator = 'main_dex_list_creator',",
         "            proguard = 'proguard',",
         "            shrinked_android_jar = 'shrinked_android_jar',",
-        "            zipalign = 'zipalign',",
-        "            resource_extractor = 'resource_extractor')",
+        "            zipalign = 'zipalign')",
         "java_library(name = 'aidl_lib',",
         "             srcs = ['AidlLib.java'],",
         "             proguard_specs = ['aidl_lib.cfg'])");
@@ -680,8 +690,7 @@ public class AndroidLibraryTest extends AndroidBuildViewTestCase {
         "<resources><string name = 'hello'>Hello Android!</string></resources>");
     ConfiguredTarget resource = getConfiguredTarget("//c/b/m/a:r");
 
-    List<String> args = ((SpawnAction) getGeneratingAction(getResourceArtifact(resource)))
-        .getArguments();
+    List<String> args = getGeneratingSpawnActionArgs(getResourceArtifact(resource));
     assertPrimaryResourceDirs(resource, ImmutableList.of("c/b/m/a/b_/res"), args);
   }
 
@@ -696,8 +705,7 @@ public class AndroidLibraryTest extends AndroidBuildViewTestCase {
         "<resources><string name = 'hello'>Hello Android!</string></resources>");
     ConfiguredTarget resource = getConfiguredTarget("//java/android:r");
 
-    List<String> args = ((SpawnAction) getGeneratingAction(getResourceArtifact(resource)))
-        .getArguments();
+    List<String> args = getGeneratingSpawnActionArgs(getResourceArtifact(resource));
     assertPrimaryResourceDirs(resource, ImmutableList.of("java/android/res"), args);
   }
 
@@ -714,8 +722,7 @@ public class AndroidLibraryTest extends AndroidBuildViewTestCase {
         "<resources><string name = 'hello'>Hello Android!</string></resources>");
     ConfiguredTarget resource = getConfiguredTarget("//java/android:r");
 
-    List<String> args = ((SpawnAction) getGeneratingAction(getResourceArtifact(resource)))
-        .getArguments();
+    List<String> args = getGeneratingSpawnActionArgs(getResourceArtifact(resource));
     assertPrimaryResourceDirs(resource, ImmutableList.of("java/android/res"), args);
   }
 
@@ -730,8 +737,7 @@ public class AndroidLibraryTest extends AndroidBuildViewTestCase {
         "exports_files(['res/values/strings.xml'])");
     ConfiguredTarget resource = getConfiguredTarget("//java/android:r");
 
-    List<String> args = ((SpawnAction) getGeneratingAction(getResourceArtifact(resource)))
-        .getArguments();
+    List<String> args = getGeneratingSpawnActionArgs(getResourceArtifact(resource));
     assertPrimaryResourceDirs(resource, ImmutableList.of("java/other/res"), args);
     assertNoEvents();
   }
@@ -749,8 +755,7 @@ public class AndroidLibraryTest extends AndroidBuildViewTestCase {
         ")");
     ConfiguredTarget resource = getConfiguredTarget("//java/android:r");
 
-    List<String> args = ((SpawnAction) getGeneratingAction(getResourceArtifact(resource)))
-        .getArguments();
+    List<String> args = getGeneratingSpawnActionArgs(getResourceArtifact(resource));
     assertPrimaryResourceDirs(resource, ImmutableList.of("java/other/res"), args);
     assertNoEvents();
   }
@@ -769,8 +774,7 @@ public class AndroidLibraryTest extends AndroidBuildViewTestCase {
         "exports_files(['res/values/strings.xml'])");
     ConfiguredTarget resource = getConfiguredTarget("//java/android:r");
 
-    List<String> args = ((SpawnAction) getGeneratingAction(getResourceArtifact(resource)))
-        .getArguments();
+    List<String> args = getGeneratingSpawnActionArgs(getResourceArtifact(resource));
     assertPrimaryResourceDirs(resource, ImmutableList.of("java/other/res"), args);
     assertNoEvents();
   }
@@ -791,8 +795,7 @@ public class AndroidLibraryTest extends AndroidBuildViewTestCase {
         ")");
     ConfiguredTarget resource = getConfiguredTarget("//java/android:r");
 
-    List<String> args = ((SpawnAction) getGeneratingAction(getResourceArtifact(resource)))
-        .getArguments();
+    List<String> args = getGeneratingSpawnActionArgs(getResourceArtifact(resource));
     assertPrimaryResourceDirs(resource, ImmutableList.of("java/other/res"), args);
     assertNoEvents();
   }
@@ -812,7 +815,7 @@ public class AndroidLibraryTest extends AndroidBuildViewTestCase {
     checkError("java/android", "r",
         "'java/android/res/somefile.xml' is not in the expected resource directory structure of"
             + " <resource directory>/{"
-            + Joiner.on(',').join(LocalResourceContainer.Builder.RESOURCE_DIRECTORY_TYPES) + "}",
+            + Joiner.on(',').join(LocalResourceContainer.RESOURCE_DIRECTORY_TYPES) + "}",
         "android_library(name = 'r',",
         "                manifest = 'AndroidManifest.xml',",
         "                resource_files = ['res/somefile.xml', 'r/t/f/m/raw/fold']",
@@ -824,7 +827,7 @@ public class AndroidLibraryTest extends AndroidBuildViewTestCase {
     checkError("java/android", "r",
         "'java/android/res/other/somefile.xml' is not in the expected resource directory structure"
             + " of <resource directory>/{"
-            + Joiner.on(',').join(LocalResourceContainer.Builder.RESOURCE_DIRECTORY_TYPES) + "}",
+            + Joiner.on(',').join(LocalResourceContainer.RESOURCE_DIRECTORY_TYPES) + "}",
         "android_library(name = 'r',",
         "                manifest = 'AndroidManifest.xml',",
         "                resource_files = ['res/other/somefile.xml', 'r/t/f/m/raw/fold']",
@@ -915,7 +918,7 @@ public class AndroidLibraryTest extends AndroidBuildViewTestCase {
         "               )");
     ConfiguredTarget r = getConfiguredTarget("//a/r:r");
     assertNoEvents();
-    List<String> args = ((SpawnAction) getGeneratingAction(getResourceArtifact(r))).getArguments();
+    List<String> args = getGeneratingSpawnActionArgs(getResourceArtifact(r));
     assertContainsSublist(args,
         ImmutableList.of("--packageForR", "com.google.android.bar"));
   }
@@ -1305,8 +1308,7 @@ public class AndroidLibraryTest extends AndroidBuildViewTestCase {
         "                resource_files = ['d2-res/values/strings.xml'],",
         "                )");
     ConfiguredTarget resource = getConfiguredTarget("//java/android/resources/d1:d1");
-    List<String> args = ((SpawnAction) getGeneratingAction(getResourceArtifact(resource)))
-        .getArguments();
+    List<String> args = getGeneratingSpawnActionArgs(getResourceArtifact(resource));
     assertPrimaryResourceDirs(resource, ImmutableList.of("java/android/resources/d1/d1-res"), args);
     Truth.assertThat(getDirectDependentResourceDirs(resource, args))
         .contains("java/android/resources/d2/d2-res");
@@ -1343,8 +1345,7 @@ public class AndroidLibraryTest extends AndroidBuildViewTestCase {
         "                )");
 
     ConfiguredTarget resource = getConfiguredTarget("//java/android/resources/d1:d1");
-    List<String> args = ((SpawnAction) getGeneratingAction(getResourceArtifact(resource)))
-        .getArguments();
+    List<String> args = getGeneratingSpawnActionArgs(getResourceArtifact(resource));
     assertPrimaryResourceDirs(
         resource, ImmutableList.of("java/android/resources/d1/d1-res"), args);
     Truth.assertThat(getDirectDependentResourceDirs(resource, args))

@@ -21,7 +21,6 @@ import com.google.devtools.build.lib.actions.ActionExecutionContext;
 import com.google.devtools.build.lib.actions.ActionStatusMessage;
 import com.google.devtools.build.lib.actions.ExecException;
 import com.google.devtools.build.lib.actions.ExecutionStrategy;
-import com.google.devtools.build.lib.actions.Executor;
 import com.google.devtools.build.lib.actions.Spawn;
 import com.google.devtools.build.lib.actions.SpawnActionContext;
 import com.google.devtools.build.lib.buildtool.BuildRequest;
@@ -32,6 +31,7 @@ import com.google.devtools.build.lib.runtime.CommandEnvironment;
 import com.google.devtools.build.lib.shell.Command;
 import com.google.devtools.build.lib.shell.CommandException;
 import com.google.devtools.build.lib.shell.CommandResult;
+import com.google.devtools.build.lib.util.OS;
 import com.google.devtools.build.lib.vfs.FileSystem;
 import com.google.devtools.build.lib.vfs.FileSystemUtils;
 import com.google.devtools.build.lib.vfs.Path;
@@ -48,6 +48,10 @@ import java.util.concurrent.atomic.AtomicReference;
   contextType = SpawnActionContext.class
 )
 public class DarwinSandboxedStrategy extends SandboxStrategy {
+
+  public static boolean isSupported(CommandEnvironment cmdEnv) {
+    return OS.getCurrent() == OS.DARWIN && DarwinSandboxRunner.isSupported(cmdEnv);
+  }
 
   private final Path execRoot;
   private final boolean sandboxDebug;
@@ -162,11 +166,10 @@ public class DarwinSandboxedStrategy extends SandboxStrategy {
       ActionExecutionContext actionExecutionContext,
       AtomicReference<Class<? extends SpawnActionContext>> writeOutputFiles)
       throws ExecException, InterruptedException, IOException {
-    Executor executor = actionExecutionContext.getExecutor();
-    executor
+    actionExecutionContext
         .getEventBus()
         .post(ActionStatusMessage.runningStrategy(spawn.getResourceOwner(), "darwin-sandbox"));
-    SandboxHelpers.reportSubcommand(executor, spawn);
+    SandboxHelpers.reportSubcommand(actionExecutionContext, spawn);
 
     // Each invocation of "exec" gets its own sandbox.
     Path sandboxPath = getSandboxRoot();

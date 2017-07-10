@@ -14,8 +14,7 @@
 
 package com.google.devtools.build.lib.syntax;
 
-import static com.google.devtools.build.lib.syntax.Parser.ParsingMode.BUILD;
-import static com.google.devtools.build.lib.syntax.Parser.ParsingMode.SKYLARK;
+import static com.google.devtools.build.lib.syntax.Parser.Dialect.SKYLARK;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Supplier;
@@ -73,14 +72,21 @@ public class Parser {
     }
   }
 
-  /**
-   * ParsingMode is used to select which features the parser should accept.
-   */
-  public enum ParsingMode {
-    /** Used for parsing BUILD files */
+  /** Used to select whether the parser rejects features that are prohibited for BUILD files. */
+  // TODO(brandjon): Instead of using an enum to control what features are allowed, factor these
+  // restrictions into a separate visitor that can be outside the core Skylark parser. This will
+  // reduce parser complexity and help keep Bazel-specific knowledge out of the interpreter.
+  public enum Dialect {
+    /** Used for BUILD files. */
     BUILD,
-    /** Used for parsing .bzl files */
+    /** Used for .bzl and other Skylark files. This allows all language features. */
     SKYLARK,
+  }
+
+  /** Used to select what constructs are allowed based on whether we're at the top level. */
+  public enum ParsingLevel {
+    TOP_LEVEL,
+    LOCAL_LEVEL
   }
 
   private static final EnumSet<TokenKind> STATEMENT_TERMINATOR_SET =
@@ -141,7 +147,7 @@ public class Parser {
   private final Lexer lexer;
   private final EventHandler eventHandler;
   private final List<Comment> comments;
-  private final ParsingMode parsingMode;
+  private final Dialect dialect;
 
   private static final Map<TokenKind, Operator> binaryOperators =
       new ImmutableMap.Builder<TokenKind, Operator>()
@@ -192,10 +198,10 @@ public class Parser {
   private int errorsCount;
   private boolean recoveryMode;  // stop reporting errors until next statement
 
-  private Parser(Lexer lexer, EventHandler eventHandler, ParsingMode parsingMode) {
+  private Parser(Lexer lexer, EventHandler eventHandler, Dialect dialect) {
     this.lexer = lexer;
     this.eventHandler = eventHandler;
-    this.parsingMode = parsingMode;
+    this.dialect = dialect;
     this.tokens = lexer.getTokens().iterator();
     this.comments = new ArrayList<>();
     nextToken();
@@ -212,17 +218,18 @@ public class Parser {
   }
 
   /**
-   * Entry-point for parsing a file with comments.
+   * Main entry point for parsing a file.
    *
    * @param input the input to parse
    * @param eventHandler a reporter for parsing errors
-   * @param parsingMode if set to {@link ParsingMode#BUILD}, restricts the parser to just the
-   *     features present in the Build language
+   * @param dialect may restrict the parser to Build-language features
+   * @see BuildFileAST#parseBuildString
+   * @see BuildFileAST#parseSkylarkString
    */
   public static ParseResult parseFile(
-      ParserInputSource input, EventHandler eventHandler, ParsingMode parsingMode) {
+      ParserInputSource input, EventHandler eventHandler, Dialect dialect) {
     Lexer lexer = new Lexer(input, eventHandler);
-    Parser parser = new Parser(lexer, eventHandler, parsingMode);
+    Parser parser = new Parser(lexer, eventHandler, dialect);
     List<Statement> statements = parser.parseFileInput();
     return new ParseResult(
         statements,
@@ -231,31 +238,19 @@ public class Parser {
         parser.errorsCount > 0 || lexer.containsErrors());
   }
 
-  /** Convenience method for {@code parseFile} with the Build language. */
-  public static ParseResult parseFile(ParserInputSource input, EventHandler eventHandler) {
-    return parseFile(input, eventHandler, BUILD);
-  }
-
-  /** Convenience method for {@code parseFile} with Skylark. */
-  public static ParseResult parseFileForSkylark(
-      ParserInputSource input, EventHandler eventHandler) {
-    return parseFile(input, eventHandler, SKYLARK);
-  }
-
   /**
-   * Entry-point for parsing an expression. The expression may be followed by newline tokens.
+   * Parses a sequence of statements, possibly followed by newline tokens.
    *
-   * @param input the input to parse
-   * @param eventHandler a reporter for parsing errors
-   * @param parsingMode if set to {@link ParsingMode#BUILD}, restricts the parser to just the
-   *     features present in the Build language
+   * <p>{@code load()} statements are not permitted. Use {@code parsingLevel} to control whether
+   * function definitions, for statements, etc., are allowed.
    */
-  @VisibleForTesting
-  public static Expression parseExpression(
-      ParserInputSource input, EventHandler eventHandler, ParsingMode parsingMode) {
+  public static List<Statement> parseStatements(
+      ParserInputSource input, EventHandler eventHandler,
+      ParsingLevel parsingLevel, Dialect dialect) {
     Lexer lexer = new Lexer(input, eventHandler);
-    Parser parser = new Parser(lexer, eventHandler, parsingMode);
-    Expression result = parser.parseExpression();
+    Parser parser = new Parser(lexer, eventHandler, dialect);
+    List<Statement> result = new ArrayList<>();
+    parser.parseStatement(result, parsingLevel);
     while (parser.token.kind == TokenKind.NEWLINE) {
       parser.nextToken();
     }
@@ -263,17 +258,30 @@ public class Parser {
     return result;
   }
 
-  /** Convenience method for {@code parseExpression} with the Build language. */
-  @VisibleForTesting
-  public static Expression parseExpression(ParserInputSource input, EventHandler eventHandler) {
-    return parseExpression(input, eventHandler, BUILD);
+  /**
+   * Convenience wrapper for {@link #parseStatements} where exactly one statement is expected.
+   *
+   * @throws IllegalArgumentException if the number of parsed statements was not exactly one
+   */
+  public static Statement parseStatement(
+      ParserInputSource input, EventHandler eventHandler,
+      ParsingLevel parsingLevel, Dialect dialect) {
+    List<Statement> stmts = parseStatements(
+        input, eventHandler, parsingLevel, dialect);
+    return Iterables.getOnlyElement(stmts);
   }
 
-  /** Convenience method for {@code parseExpression} with Skylark. */
-  @VisibleForTesting
-  public static Expression parseExpressionForSkylark(
-      ParserInputSource input, EventHandler eventHandler) {
-    return parseExpression(input, eventHandler, SKYLARK);
+  /** Parses an expression, possibly followed by newline tokens. */
+  public static Expression parseExpression(
+      ParserInputSource input, EventHandler eventHandler, Dialect dialect) {
+    Lexer lexer = new Lexer(input, eventHandler);
+    Parser parser = new Parser(lexer, eventHandler, dialect);
+    Expression result = parser.parseExpression();
+    while (parser.token.kind == TokenKind.NEWLINE) {
+      parser.nextToken();
+    }
+    parser.expect(TokenKind.EOF);
+    return result;
   }
 
   private void reportError(Location location, String message) {
@@ -452,7 +460,7 @@ public class Parser {
     final int start = token.left;
     // parse **expr
     if (token.kind == TokenKind.STAR_STAR) {
-      if (parsingMode != SKYLARK) {
+      if (dialect != SKYLARK) {
         reportError(
             lexer.createLocation(token.left, token.right),
             "**kwargs arguments are not allowed in BUILD files");
@@ -463,7 +471,7 @@ public class Parser {
     }
     // parse *expr
     if (token.kind == TokenKind.STAR) {
-      if (parsingMode != SKYLARK) {
+      if (dialect != SKYLARK) {
         reportError(
             lexer.createLocation(token.left, token.right),
             "*args arguments are not allowed in BUILD files");
@@ -560,12 +568,7 @@ public class Parser {
 
   // arg_list ::= ( (arg ',')* arg ','? )?
   private List<Argument.Passed> parseFuncallArguments() {
-    List<Argument.Passed> arguments =
-        parseFunctionArguments(new Supplier<Argument.Passed>() {
-              @Override public Argument.Passed get() {
-                return parseFuncallArgument();
-              }
-            });
+    List<Argument.Passed> arguments = parseFunctionArguments(this::parseFuncallArgument);
     try {
       Argument.validateFuncallArguments(arguments);
     } catch (Argument.ArgumentException e) {
@@ -697,10 +700,9 @@ public class Parser {
       case MINUS:
         {
           nextToken();
-          List<Argument.Passed> args = new ArrayList<>();
           Expression expr = parsePrimaryWithSuffix();
-          args.add(setLocation(new Argument.Positional(expr), start, expr));
-          return makeFuncallExpression(null, new Identifier("-"), args, start, token.right);
+          UnaryOperatorExpression minus = new UnaryOperatorExpression(UnaryOperator.MINUS, expr);
+          return setLocation(minus, start, expr);
         }
       default:
         {
@@ -817,7 +819,9 @@ public class Parser {
         comprehensionBuilder.addFor(loopVar, listExpression);
       } else if (token.kind == TokenKind.IF) {
         nextToken();
-        comprehensionBuilder.addIf(parseExpression());
+        // [x for x in li if 1, 2]  # parse error
+        // [x for x in li if (1, 2)]  # ok
+        comprehensionBuilder.addIf(parseNonTupleExpression(0));
       } else if (token.kind == closingBracket) {
         nextToken();
         return comprehensionBuilder.build();
@@ -948,6 +952,7 @@ public class Parser {
     Expression expr = parseNonTupleExpression(prec + 1);
     // The loop is not strictly needed, but it prevents risks of stack overflow. Depth is
     // limited to number of different precedence levels (operatorPrecedence.size()).
+    Operator lastOp = null;
     for (;;) {
 
       if (token.kind == TokenKind.NOT) {
@@ -965,10 +970,21 @@ public class Parser {
       if (!operatorPrecedence.get(prec).contains(operator)) {
         return expr;
       }
+
+      // Operator '==' and other operators of the same precedence (e.g. '<', 'in')
+      // are not associative.
+      if (lastOp != null && operatorPrecedence.get(prec).contains(Operator.EQUALS_EQUALS)) {
+        reportError(
+            lexer.createLocation(token.left, token.right),
+            String.format("Operator '%s' is not associative with operator '%s'. Use parens.",
+                lastOp, operator));
+      }
+
       nextToken();
       Expression secondary = parseNonTupleExpression(prec + 1);
       expr = optimizeBinOpExpression(operator, expr, secondary);
       setLocation(expr, start, secondary);
+      lastOp = operator;
     }
   }
 
@@ -1047,7 +1063,8 @@ public class Parser {
     int start = token.left;
     expect(TokenKind.NOT);
     Expression expression = parseNonTupleExpression(prec + 1);
-    NotExpression notExpression = new NotExpression(expression);
+    UnaryOperatorExpression notExpression =
+        new UnaryOperatorExpression(UnaryOperator.NOT, expression);
     return setLocation(notExpression, start, token.right);
   }
 
@@ -1074,6 +1091,8 @@ public class Parser {
   // load '(' STRING (COMMA [IDENTIFIER EQUALS] STRING)* COMMA? ')'
   private void parseLoad(List<Statement> list) {
     int start = token.left;
+    expect(TokenKind.LOAD);
+    expect(TokenKind.LPAREN);
     if (token.kind != TokenKind.STRING) {
       expect(TokenKind.STRING);
       return;
@@ -1097,6 +1116,7 @@ public class Parser {
 
     LoadStatement stmt = new LoadStatement(importString, symbols);
     list.add(setLocation(stmt, start, token.left));
+    expectAndRecover(TokenKind.NEWLINE);
   }
 
   /**
@@ -1148,21 +1168,12 @@ public class Parser {
   }
 
   private void parseTopLevelStatement(List<Statement> list) {
-    // In Python grammar, there is no "top-level statement" and imports are
-    // considered as "small statements". We are a bit stricter than Python here.
-    // Check if there is an include
-    if (token.kind == TokenKind.IDENTIFIER) {
-      Token identToken = token;
-      Identifier ident = parseIdent();
-
-      if (ident.getName().equals("load") && token.kind == TokenKind.LPAREN) {
-        expect(TokenKind.LPAREN);
-        parseLoad(list);
-        return;
-      }
-      pushToken(identToken); // push the ident back to parse it as a statement
+    // Unlike Python imports, load statements can appear only at top-level.
+    if (token.kind == TokenKind.LOAD) {
+      parseLoad(list);
+    } else {
+      parseStatement(list, ParsingLevel.TOP_LEVEL);
     }
-    parseStatement(list, true);
   }
 
   // small_stmt | 'pass'
@@ -1288,7 +1299,8 @@ public class Parser {
     expect(TokenKind.DEF);
     Identifier ident = parseIdent();
     expect(TokenKind.LPAREN);
-    List<Parameter<Expression, Expression>> params = parseParameters();
+    List<Parameter<Expression, Expression>> params =
+        parseFunctionArguments(this::parseFunctionParameter);
     FunctionSignature.WithValues<Expression, Expression> signature = functionSignature(params);
     expect(TokenKind.RPAREN);
     expect(TokenKind.COLON);
@@ -1306,15 +1318,6 @@ public class Parser {
       // return bogus empty signature
       return FunctionSignature.WithValues.<Expression, Expression>create(FunctionSignature.of());
     }
-  }
-
-  private List<Parameter<Expression, Expression>> parseParameters() {
-    return parseFunctionArguments(
-        new Supplier<Parameter<Expression, Expression>>() {
-          @Override public Parameter<Expression, Expression> get() {
-            return parseFunctionParameter();
-          }
-        });
   }
 
   /**
@@ -1374,7 +1377,7 @@ public class Parser {
       }
       expect(TokenKind.INDENT);
       while (token.kind != TokenKind.OUTDENT && token.kind != TokenKind.EOF) {
-        parseStatement(list, false);
+        parseStatement(list, ParsingLevel.LOCAL_LEVEL);
       }
       expectAndRecover(TokenKind.OUTDENT);
     } else {
@@ -1420,17 +1423,17 @@ public class Parser {
 
   // stmt ::= simple_stmt
   //        | compound_stmt
-  private void parseStatement(List<Statement> list, boolean isTopLevel) {
-    if (token.kind == TokenKind.DEF && parsingMode == SKYLARK) {
-      if (!isTopLevel) {
+  private void parseStatement(List<Statement> list, ParsingLevel parsingLevel) {
+    if (token.kind == TokenKind.DEF && dialect == SKYLARK) {
+      if (parsingLevel == ParsingLevel.LOCAL_LEVEL) {
         reportError(lexer.createLocation(token.left, token.right),
             "nested functions are not allowed. Move the function to top-level");
       }
       parseFunctionDefStatement(list);
-    } else if (token.kind == TokenKind.IF && parsingMode == SKYLARK) {
+    } else if (token.kind == TokenKind.IF && dialect == SKYLARK) {
       list.add(parseIfStatement());
-    } else if (token.kind == TokenKind.FOR && parsingMode == SKYLARK) {
-      if (isTopLevel) {
+    } else if (token.kind == TokenKind.FOR && dialect == SKYLARK) {
+      if (parsingLevel == ParsingLevel.TOP_LEVEL) {
         reportError(
             lexer.createLocation(token.left, token.right),
             "for loops are not allowed on top-level. Put it into a function");

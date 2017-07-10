@@ -25,6 +25,7 @@ import com.google.devtools.build.lib.actions.ActionAnalysisMetadata;
 import com.google.devtools.build.lib.actions.ActionCacheChecker;
 import com.google.devtools.build.lib.actions.ActionCacheChecker.Token;
 import com.google.devtools.build.lib.actions.ActionCompletionEvent;
+import com.google.devtools.build.lib.actions.ActionContext;
 import com.google.devtools.build.lib.actions.ActionExecutedEvent;
 import com.google.devtools.build.lib.actions.ActionExecutionContext;
 import com.google.devtools.build.lib.actions.ActionExecutionContextFactory;
@@ -47,7 +48,6 @@ import com.google.devtools.build.lib.actions.ArtifactPrefixConflictException;
 import com.google.devtools.build.lib.actions.CachedActionEvent;
 import com.google.devtools.build.lib.actions.EnvironmentalExecException;
 import com.google.devtools.build.lib.actions.Executor;
-import com.google.devtools.build.lib.actions.Executor.ActionContext;
 import com.google.devtools.build.lib.actions.MapBasedActionGraph;
 import com.google.devtools.build.lib.actions.MutableActionGraph;
 import com.google.devtools.build.lib.actions.MutableActionGraph.ActionConflictException;
@@ -55,6 +55,7 @@ import com.google.devtools.build.lib.actions.NotifyOnActionCacheHit;
 import com.google.devtools.build.lib.actions.NotifyOnActionCacheHit.ActionCachedContext;
 import com.google.devtools.build.lib.actions.PackageRootResolver;
 import com.google.devtools.build.lib.actions.TargetOutOfDateException;
+import com.google.devtools.build.lib.actions.cache.Metadata;
 import com.google.devtools.build.lib.actions.cache.MetadataHandler;
 import com.google.devtools.build.lib.cmdline.Label;
 import com.google.devtools.build.lib.concurrent.ExecutorUtil;
@@ -732,7 +733,7 @@ public final class SkyframeActionExecutor implements ActionExecutionContextFacto
     // Delete the outputs before executing the action, just to ensure that
     // the action really does produce the outputs.
     try {
-      action.prepare(context.getExecutor().getExecRoot());
+      action.prepare(context.getExecRoot());
       createOutputDirectories(action);
     } catch (IOException e) {
       reportError("failed to delete output files before executing action", e, action, null);
@@ -1100,21 +1101,11 @@ public final class SkyframeActionExecutor implements ActionExecutionContextFacto
     }
 
     @Override
-    public byte[] getDigest(ActionInput actionInput) throws IOException {
-      byte[] digest = perActionCache.getDigest(actionInput);
-      return digest != null ? digest : perBuildFileCache.getDigest(actionInput);
-    }
-
-    @Override
-    public boolean isFile(Artifact input) {
-      // PerActionCache must have a value for all artifacts.
-      return perActionCache.isFile(input);
-    }
-
-    @Override
-    public long getSizeInBytes(ActionInput actionInput) throws IOException {
-      long size = perActionCache.getSizeInBytes(actionInput);
-      return size > -1 ? size : perBuildFileCache.getSizeInBytes(actionInput);
+    public Metadata getMetadata(ActionInput input) throws IOException {
+      Metadata metadata = perActionCache.getMetadata(input);
+      return (metadata != null) && (metadata != FileArtifactValue.MISSING_FILE_MARKER)
+          ? metadata
+          : perBuildFileCache.getMetadata(input);
     }
 
     @Override

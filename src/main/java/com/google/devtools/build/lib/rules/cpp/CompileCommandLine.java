@@ -15,7 +15,6 @@ package com.google.devtools.build.lib.rules.cpp;
 
 import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
 import com.google.devtools.build.lib.actions.Artifact;
 import com.google.devtools.build.lib.analysis.config.PerLabelOptions;
 import com.google.devtools.build.lib.cmdline.Label;
@@ -161,7 +160,12 @@ public final class CompileCommandLine {
     // Unfiltered compiler options contain system include paths. These must be added after
     // the user provided options, otherwise users adding include paths will not pick up their
     // own include paths first.
-    if (!isObjcCompile(actionName)) {
+    if (isObjcCompile(actionName)) {
+      PathFragment sysroot = cppProvider.getSysroot();
+      if (sysroot != null) {
+        options.add(toolchain.getSysrootCompilerOption(sysroot));
+      }
+    } else {
       options.addAll(cppProvider.getUnfilteredCompilerOptions(features));
     }
 
@@ -192,7 +196,7 @@ public final class CompileCommandLine {
 
   // For each option in 'in', add it to 'out' unless it is matched by the 'coptsFilter' regexp.
   private void addFilteredOptions(List<String> out, List<String> in) {
-    Iterables.addAll(out, Iterables.filter(in, coptsFilter));
+    in.stream().filter(coptsFilter).forEachOrdered(out::add);
   }
 
   public Artifact getSourceFile() {

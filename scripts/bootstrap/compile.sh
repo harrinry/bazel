@@ -233,42 +233,6 @@ cp $1 $2/MANIFEST
 EOF
 chmod 0755 ${ARCHIVE_DIR}/_embedded_binaries/build-runfiles${EXE_EXT}
 
-log "Creating process-wrapper..."
-cat <<'EOF' >${ARCHIVE_DIR}/_embedded_binaries/process-wrapper${EXE_EXT}
-#!/bin/sh
-# Dummy process wrapper, does not support timeout
-shift 2
-stdout="$1"
-stderr="$2"
-shift 2
-
-if [ "$stdout" = "-" ]
-then
-  if [ "$stderr" = "-" ]
-  then
-    "$@"
-    exit $?
-  else
-    "$@" 2>"$stderr"
-    exit $?
-  fi
-else
-  if [ "$stderr" = "-" ]
-  then
-    "$@" >"$stdout"
-    exit $?
-  else
-    "$@" 2>"$stderr" >"$stdout"
-    exit $?
-  fi
-fi
-
-
-"$@"
-exit $?
-EOF
-chmod 0755 ${ARCHIVE_DIR}/_embedded_binaries/process-wrapper${EXE_EXT}
-
 function build_jni() {
   local -r output_dir=$1
 
@@ -284,13 +248,12 @@ function build_jni() {
     mkdir -p "$(dirname "$output")"
 
     # Keep this `find` command in sync with the `srcs` of
-    # //src/main/native:windows_jni
-    local srcs=$(find src/main/native \
-        -name 'windows_*.cc' -o -name 'windows_*.h')
+    # //src/main/native/windows:windows_jni
+    local srcs=$(find src/main/native/windows -name '*.cc' -o -name '*.h')
     [ -n "$srcs" ] || fail "Could not find sources for Windows JNI library"
 
     # do not quote $srcs because we need to expand it to multiple args
-    src/main/native/build_windows_jni.sh "$tmp_output" ${srcs}
+    src/main/native/windows/build_windows_jni.sh "$tmp_output" ${srcs}
 
     cp "$tmp_output" "$output"
     chmod 0555 "$output"

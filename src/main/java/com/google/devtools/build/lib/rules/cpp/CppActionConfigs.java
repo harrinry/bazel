@@ -18,15 +18,15 @@ import com.google.common.collect.ImmutableList;
 import java.util.Set;
 
 /**
- * A helper class for creating action_configs for the c++ link action.
+ * A helper class for creating action_configs for the c++ actions.
  *
  * <p>TODO(b/30109612): Replace this with action_configs in the crosstool instead of putting it in
  * legacy features.
  */
 public class CppActionConfigs {
 
-  /** A platform for linker invocations. */
-  public static enum CppPlatform {
+  /** A platform for C++ tool invocations. */
+  public enum CppPlatform {
     LINUX,
     MAC
   }
@@ -37,21 +37,22 @@ public class CppActionConfigs {
       String gccToolPath,
       String cppLinkDynamicLibraryToolPath,
       String arToolPath,
-      boolean supportsEmbeddedRuntimes) {
+      boolean supportsEmbeddedRuntimes,
+      boolean supportsInterfaceSharedLibraries) {
     String cppDynamicLibraryLinkerTool = "";
-    if (!features.contains("dynamic_library_linker_tool")) {
+    if (!features.contains("dynamic_library_linker_tool") && supportsInterfaceSharedLibraries) {
       cppDynamicLibraryLinkerTool =
           ""
               + "feature {"
-              + "   name: 'dynamic_library_linker_tool'"
-              + "   flag_set {"
-              + "       action: 'c++-link-dynamic-library'"
-              + "       flag_group {"
-              + "           flag: '"
+              + "  name: 'dynamic_library_linker_tool'"
+              + "  flag_set {"
+              + "    action: 'c++-link-dynamic-library'"
+              + "    flag_group {"
+              + "      flag: '"
               + cppLinkDynamicLibraryToolPath
               + "'"
-              + "       }"
-              + "   }"
+              + "    }"
+              + "  }"
               + "}";
     }
 
@@ -118,7 +119,7 @@ public class CppActionConfigs {
                 "  config_name: 'c++-link-executable'",
                 "  action_name: 'c++-link-executable'",
                 "  tool {",
-                "    tool_path: 'DUMMY_TOOL'",
+                "    tool_path: '" + gccToolPath + "'",
                 "  }",
                 "  implies: 'symbol_counts'",
                 "  implies: 'strip_debug_symbols'",
@@ -136,10 +137,12 @@ public class CppActionConfigs {
                 "  config_name: 'c++-link-dynamic-library'",
                 "  action_name: 'c++-link-dynamic-library'",
                 "  tool {",
-                "    tool_path: 'DUMMY_TOOL'",
+                "    tool_path: '" + gccToolPath + "'",
                 "  }",
-                "  implies: 'build_interface_libraries'",
-                "  implies: 'dynamic_library_linker_tool'",
+                ifTrue(
+                    supportsInterfaceSharedLibraries,
+                    "implies: 'build_interface_libraries'",
+                    "implies: 'dynamic_library_linker_tool'"),
                 "  implies: 'symbol_counts'",
                 "  implies: 'strip_debug_symbols'",
                 "  implies: 'shared_flag'",
@@ -192,22 +195,24 @@ public class CppActionConfigs {
                 "  implies: 'libraries_to_link'",
                 "  implies: 'linker_param_file'",
                 "}",
-                "feature {",
-                "  name: 'build_interface_libraries'",
-                "  flag_set {",
-                "    expand_if_all_available: 'generate_interface_library'",
-                "    action: 'c++-link-dynamic-library'",
-                "    flag_group {",
-                "      flag: '%{generate_interface_library}'",
-                "      flag: '%{interface_library_builder_path}'",
-                "      flag: '%{interface_library_input_path}'",
-                "      flag: '%{interface_library_output_path}'",
-                "    }",
-                "  }",
-                "}",
-                // Order of feature declaration matters, cppDynamicLibraryLinkerTool has to follow
-                // right after build_interface_libraries.
-                cppDynamicLibraryLinkerTool,
+                ifTrue(
+                    supportsInterfaceSharedLibraries,
+                    "feature {",
+                    "  name: 'build_interface_libraries'",
+                    "  flag_set {",
+                    "    expand_if_all_available: 'generate_interface_library'",
+                    "    action: 'c++-link-dynamic-library'",
+                    "    flag_group {",
+                    "      flag: '%{generate_interface_library}'",
+                    "      flag: '%{interface_library_builder_path}'",
+                    "      flag: '%{interface_library_input_path}'",
+                    "      flag: '%{interface_library_output_path}'",
+                    "    }",
+                    "  }",
+                    "}",
+                    // Order of feature declaration matters, cppDynamicLibraryLinkerTool has to
+                    // follow right after build_interface_libraries.
+                    cppDynamicLibraryLinkerTool),
                 "feature {",
                 "  name: 'symbol_counts'",
                 "  flag_set {",
@@ -235,6 +240,7 @@ public class CppActionConfigs {
                 "    action: 'c++-link-dynamic-library'",
                 "    expand_if_all_available: 'linkstamp_paths'",
                 "    flag_group {",
+                "      iterate_over: 'linkstamp_paths'",
                 "      flag: '%{linkstamp_paths}'",
                 "    }",
                 "  }",
@@ -323,7 +329,10 @@ public class CppActionConfigs {
                     "    action: 'c++-link-pic-static-library'",
                     "    action: 'c++-link-alwayslink-pic-static-library'",
                     "    flag_group {",
-                    ifLinux(platform, "  flag: 'rcsD'", "  flag: '%{output_execpath}'"),
+                    ifLinux(
+                        platform,
+                        "  flag: 'rcsD'",
+                        "  flag: '%{output_execpath}'"),
                     ifMac(
                         platform,
                         "  flag: '-static'",

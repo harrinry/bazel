@@ -17,12 +17,13 @@ package com.google.devtools.build.lib.remote;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.common.hash.HashCode;
-import com.google.common.hash.Hashing;
 import com.google.devtools.build.lib.actions.ActionInput;
 import com.google.devtools.build.lib.actions.ActionInputFileCache;
 import com.google.devtools.build.lib.actions.cache.DigestUtils;
+import com.google.devtools.build.lib.actions.cache.Metadata;
 import com.google.devtools.build.lib.actions.cache.VirtualActionInput;
 import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
+import com.google.devtools.build.lib.vfs.FileSystem;
 import com.google.devtools.build.lib.vfs.Path;
 import com.google.devtools.remoteexecution.v1test.Action;
 import com.google.devtools.remoteexecution.v1test.Digest;
@@ -36,7 +37,8 @@ public final class Digests {
   private Digests() {}
 
   public static Digest computeDigest(byte[] blob) {
-    return buildDigest(Hashing.sha1().hashBytes(blob).toString(), blob.length);
+    return buildDigest(
+        FileSystem.getDigestFunction().getHash().hashBytes(blob).toString(), blob.length);
   }
 
   public static Digest computeDigest(Path file) throws IOException {
@@ -102,6 +104,7 @@ public final class Digests {
 
   public static Digest getDigestFromInputCache(ActionInput input, ActionInputFileCache cache)
       throws IOException {
-    return buildDigest(cache.getDigest(input), cache.getSizeInBytes(input));
+    Metadata metadata = cache.getMetadata(input);
+    return buildDigest(metadata.getDigest(), metadata.getSize());
   }
 }

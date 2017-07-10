@@ -438,6 +438,24 @@ function test_repository_package_query() {
   expect_log "@b//b"
 }
 
+function test_repository_buildfiles_package_query() {
+  mkdir a b b/b b/c
+  echo "local_repository(name='b', path='b')" > WORKSPACE
+  echo "sh_library(name='a', deps=['@b//b'])" > a/BUILD
+  touch b/WORKSPACE b/c/BUILD
+  cat > b/b/BUILD <<EOF
+load('//c:lib.bzl', 'x')
+sh_library(
+    name = "b"
+)
+EOF
+  echo "x = 2" > b/c/lib.bzl
+  bazel query --output package "buildfiles(deps(//a))" >& $TEST_log || fail "query failed"
+  expect_log "a"
+  expect_log "@b//b"
+  expect_log "@b//c"
+}
+
 function test_warning() {
   local bar=$TEST_TMPDIR/bar
   rm -rf "$bar"
@@ -698,7 +716,7 @@ sample_bin(
 EOF
   cat > sample.bzl <<EOF
 def impl(ctx):
-    ctx.action(
+    ctx.actions.run_shell(
         command = "cat %s > %s" % (ctx.file._dep.path, ctx.outputs.sh.path),
         inputs = [ctx.file._dep],
         outputs = [ctx.outputs.sh]

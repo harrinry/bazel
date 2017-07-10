@@ -42,7 +42,9 @@ import com.google.devtools.build.lib.analysis.config.BuildConfigurationCollectio
 import com.google.devtools.build.lib.analysis.config.BuildOptions;
 import com.google.devtools.build.lib.analysis.config.ComposingSplitTransition;
 import com.google.devtools.build.lib.analysis.config.ConfigMatchingProvider;
+import com.google.devtools.build.lib.analysis.config.DynamicTransitionMapper;
 import com.google.devtools.build.lib.analysis.config.InvalidConfigurationException;
+import com.google.devtools.build.lib.analysis.config.PatchTransition;
 import com.google.devtools.build.lib.cmdline.Label;
 import com.google.devtools.build.lib.cmdline.PackageIdentifier;
 import com.google.devtools.build.lib.collect.nestedset.NestedSet;
@@ -95,9 +97,11 @@ import com.google.devtools.build.skyframe.SkyKey;
 import com.google.devtools.build.skyframe.WalkableGraph;
 import com.google.devtools.common.options.Converter;
 import com.google.devtools.common.options.Option;
+import com.google.devtools.common.options.OptionDocumentationCategory;
 import com.google.devtools.common.options.OptionsBase;
 import com.google.devtools.common.options.OptionsParser.OptionUsageRestrictions;
 import com.google.devtools.common.options.OptionsParsingException;
+import com.google.devtools.common.options.proto.OptionFilters.OptionEffectTag;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -168,6 +172,8 @@ public class BuildView {
       defaultValue = "-1",
       category = "what",
       converter = LoadingPhaseThreadCountConverter.class,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.UNKNOWN},
       help = "Number of parallel threads to use for the loading/analysis phase."
     )
     public int loadingPhaseThreads;
@@ -177,6 +183,8 @@ public class BuildView {
       abbrev = 'k',
       defaultValue = "false",
       category = "strategy",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.UNKNOWN},
       help =
           "Continue as much as possible after an error.  While the target that failed, and those "
               + "that depend on it, cannot be analyzed (or built), the other prerequisites of "
@@ -191,6 +199,8 @@ public class BuildView {
               + " an upcoming Blaze release",
       defaultValue = "false",
       category = "strategy",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.UNKNOWN},
       help = "Treat visible analysis warnings as errors."
     )
     public boolean analysisWarningsAsErrors;
@@ -199,6 +209,8 @@ public class BuildView {
       name = "discard_analysis_cache",
       defaultValue = "false",
       category = "strategy",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.UNKNOWN},
       help =
           "Discard the analysis cache immediately after the analysis phase completes."
               + " Reduces memory usage by ~10%, but makes further incremental builds slower."
@@ -210,6 +222,8 @@ public class BuildView {
       defaultValue = "",
       category = "experimental",
       converter = RegexFilter.RegexFilterConverter.class,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.UNKNOWN},
       help = "Filters set of targets to schedule extra_actions for."
     )
     public RegexFilter extraActionFilter;
@@ -218,6 +232,8 @@ public class BuildView {
       name = "experimental_extra_action_top_level_only",
       defaultValue = "false",
       category = "experimental",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.UNKNOWN},
       help = "Only schedules extra_actions for top level targets."
     )
     public boolean extraActionTopLevelOnly;
@@ -226,6 +242,8 @@ public class BuildView {
       name = "version_window_for_dirty_node_gc",
       defaultValue = "0",
       optionUsageRestrictions = OptionUsageRestrictions.UNDOCUMENTED,
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.UNKNOWN},
       help =
           "Nodes that have been dirty for more than this many versions will be deleted"
               + " from the graph upon the next update. Values must be non-negative long integers,"
@@ -238,6 +256,8 @@ public class BuildView {
       name = "experimental_interleave_loading_and_analysis",
       defaultValue = "true",
       category = "experimental",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.UNKNOWN},
       help = "No-op."
     )
     public boolean interleaveLoadingAndAnalysis;
@@ -875,7 +895,9 @@ public class BuildView {
       if (targetAndConfig.getConfiguration() != null) {
         asDeps.put(targetAndConfig.getConfiguration(),
             Dependency.withTransitionAndAspects(
-                targetAndConfig.getLabel(), getTopLevelTransition(targetAndConfig),
+                targetAndConfig.getLabel(),
+                getTopLevelTransition(targetAndConfig,
+                    ruleClassProvider.getDynamicTransitionMapper()),
                 // TODO(bazel-team): support top-level aspects
                 AspectCollection.EMPTY));
       }
@@ -916,8 +938,8 @@ public class BuildView {
    * Returns the transition to apply to the top-level configuration before applying it to this
    * target. This enables support for rule-triggered top-level configuration hooks.
    */
-  private static Attribute.Transition getTopLevelTransition(
-      TargetAndConfiguration targetAndConfig) {
+  private static Attribute.Transition getTopLevelTransition(TargetAndConfiguration targetAndConfig,
+      DynamicTransitionMapper dynamicTransitionMapper) {
     Target target = targetAndConfig.getTarget();
     BuildConfiguration fromConfig = targetAndConfig.getConfiguration();
     Preconditions.checkArgument(fromConfig.useDynamicConfigurations());
@@ -938,7 +960,11 @@ public class BuildView {
     if (transitionFactory == null) {
       return topLevelTransition;
     }
-    Attribute.Transition ruleClassTransition = transitionFactory.buildTransitionFor(associatedRule);
+    // dynamicTransitionMapper is only needed because of Attribute.ConfigurationTransition.DATA:
+    // this is C++-specific but non-C++ rules declare it. So they can't directly provide the
+    // C++-specific patch transition that implements it.
+    PatchTransition ruleClassTransition = (PatchTransition)
+        dynamicTransitionMapper.map(transitionFactory.buildTransitionFor(associatedRule));
     if (ruleClassTransition == null) {
       return topLevelTransition;
     } else if (topLevelTransition == ConfigurationTransition.NONE) {
@@ -1142,7 +1168,12 @@ public class BuildView {
     if (factory == null) {
       return ConfigurationTransition.NONE;
     }
-    Transition transition = factory.buildTransitionFor(rule);
+
+    // dynamicTransitionMapper is only needed because of Attribute.ConfigurationTransition.DATA:
+    // this is C++-specific but non-C++ rules declare it. So they can't directly provide the
+    // C++-specific patch transition that implements it.
+    PatchTransition transition = (PatchTransition)
+        ruleClassProvider.getDynamicTransitionMapper().map(factory.buildTransitionFor(rule));
     return (transition == null) ? ConfigurationTransition.NONE : transition;
   }
 

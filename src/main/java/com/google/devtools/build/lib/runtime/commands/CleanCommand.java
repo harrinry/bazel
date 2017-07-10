@@ -31,9 +31,11 @@ import com.google.devtools.build.lib.util.ShellEscaper;
 import com.google.devtools.build.lib.vfs.FileSystemUtils;
 import com.google.devtools.build.lib.vfs.Path;
 import com.google.devtools.common.options.Option;
+import com.google.devtools.common.options.OptionDocumentationCategory;
 import com.google.devtools.common.options.OptionsBase;
 import com.google.devtools.common.options.OptionsParser;
 import com.google.devtools.common.options.OptionsProvider;
+import com.google.devtools.common.options.proto.OptionFilters.OptionEffectTag;
 import java.io.FileDescriptor;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -60,6 +62,8 @@ public final class CleanCommand implements BlazeCommand {
       name = "clean_style",
       defaultValue = "",
       category = "clean",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.UNKNOWN},
       help = "Can be 'expunge', 'expunge_async', or 'async'."
     )
     public String cleanStyle;
@@ -69,6 +73,8 @@ public final class CleanCommand implements BlazeCommand {
       defaultValue = "null",
       category = "clean",
       expansion = "--clean_style=expunge",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.UNKNOWN},
       help =
           "If specified, clean removes the entire working tree for this %{product} "
               + "instance, which includes all %{product}-created temporary and build output "
@@ -81,6 +87,8 @@ public final class CleanCommand implements BlazeCommand {
       defaultValue = "null",
       category = "clean",
       expansion = "--clean_style=expunge_async",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.UNKNOWN},
       help =
           "If specified, clean asynchronously removes the entire working tree for "
               + "this %{product} instance, which includes all %{product}-created temporary and "
@@ -95,6 +103,8 @@ public final class CleanCommand implements BlazeCommand {
       defaultValue = "null",
       category = "clean",
       expansion = "--clean_style=async",
+      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
+      effectTags = {OptionEffectTag.UNKNOWN},
       help =
           "If specified, clean asynchronously removes the entire working tree for "
               + "this %{product} instance, which includes all %{product}-created temporary and "
@@ -227,6 +237,7 @@ public final class CleanCommand implements BlazeCommand {
     if (env.getOutputService() != null) {
       env.getOutputService().clean();
     }
+    env.getBlazeWorkspace().clearCaches();
     if (expunge) {
       LOG.info("Expunging...");
       env.getRuntime().prepareForAbruptShutdown();
@@ -255,7 +266,7 @@ public final class CleanCommand implements BlazeCommand {
       asyncClean(env, outputBase, "Output base");
     } else {
       LOG.info("Output cleaning...");
-      env.getBlazeWorkspace().clearCaches();
+      env.getBlazeWorkspace().resetEvaluator();
       // In order to be sure that we delete everything, delete the workspace directory both for
       // --deep_execroot and for --nodeep_execroot.
       for (String directory : new String[] {workspaceDirectory, "execroot"}) {
