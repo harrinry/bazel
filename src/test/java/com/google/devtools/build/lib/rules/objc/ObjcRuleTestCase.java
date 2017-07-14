@@ -22,6 +22,7 @@ import static com.google.devtools.build.lib.rules.objc.LegacyCompilationSupport.
 import static com.google.devtools.build.lib.rules.objc.ObjcProvider.GENERAL_RESOURCE_FILE;
 import static com.google.devtools.build.lib.rules.objc.ObjcProvider.HEADER;
 import static com.google.devtools.build.lib.rules.objc.ObjcProvider.INCLUDE;
+import static com.google.devtools.build.lib.rules.objc.ObjcProvider.MODULE_MAP;
 import static com.google.devtools.build.lib.rules.objc.ObjcProvider.STORYBOARD;
 import static com.google.devtools.build.lib.rules.objc.ObjcRuleClasses.BundlingRule.FAMILIES_ATTR;
 import static com.google.devtools.build.lib.rules.objc.ObjcRuleClasses.BundlingRule.INFOPLIST_ATTR;
@@ -198,7 +199,6 @@ public abstract class ObjcRuleTestCase extends BuildViewTestCase {
         return String.format("blaze-out/ios_%s-fastbuild/", arch);
       case IOS_EXTENSION: // Intentional fall-through.
       case IOS_APPLICATION:
-      case WATCH_OS1_EXTENSION:
       case APPLEBIN_IOS:
         return String.format("blaze-out/ios-%1$s-min%3$s-%2$s-ios_%1$s-fastbuild/",
             arch, configurationDistinguisher.toString().toLowerCase(Locale.US), minOsVersion);
@@ -234,7 +234,6 @@ public abstract class ObjcRuleTestCase extends BuildViewTestCase {
       String arch, ConfigurationDistinguisher configurationDistinguisher) {
     switch (configurationDistinguisher) {
       case IOS_EXTENSION:
-      case WATCH_OS1_EXTENSION:
       case APPLEBIN_IOS:
         return String.format("blaze-out/%s-ios_%s-fastbuild/bin/",
             configurationDistinguisher.toString().toLowerCase(Locale.US), arch);
@@ -259,8 +258,6 @@ public abstract class ObjcRuleTestCase extends BuildViewTestCase {
       case IOS_APPLICATION:
       case APPLEBIN_IOS:
         return DEFAULT_IOS_SDK_VERSION;
-      case WATCH_OS1_EXTENSION:
-        return WatchUtils.MINIMUM_OS_VERSION;
       case APPLEBIN_WATCHOS:
         return DottedVersion.fromString(XcodeVersionProperties.DEFAULT_WATCHOS_SDK_VERSION);
       default:
@@ -1050,22 +1047,6 @@ public abstract class ObjcRuleTestCase extends BuildViewTestCase {
         getSourceArtifact("fx/fx1.framework/b"),
         getSourceArtifact("fx/fx2.framework/c"),
         getSourceArtifact("fx/fx2.framework/d"));
-  }
-
-  protected void checkLinkIncludeOrderFrameworksAndSystemLibsFirst(RuleType ruleType)
-      throws Exception {
-    useConfiguration("--noobjc_includes_prioritize_static_libs");
-    scratch.file("fx/fx1.framework");
-    scratch.file("fx/BUILD", "objc_framework(name = 'fx')");
-    scratch.file("x/a.m");
-    ruleType.scratchTarget(
-        scratch, "srcs", "['a.m']", "sdk_frameworks", "['fx']", "sdk_dylibs", "['libdy1']");
-
-    CommandAction linkAction = linkAction("//x:x");
-    String linkActionArgs = Joiner.on(" ").join(linkAction.getArguments());
-
-    assertThat(linkActionArgs.indexOf("-F")).isLessThan(linkActionArgs.indexOf("-filelist"));
-    assertThat(linkActionArgs.indexOf("-l")).isLessThan(linkActionArgs.indexOf("-filelist"));
   }
 
   protected void checkLinkIncludeOrderStaticLibsFirst(RuleType ruleType) throws Exception {
@@ -4479,6 +4460,35 @@ public abstract class ObjcRuleTestCase extends BuildViewTestCase {
         .contains("-another-opt -Wl,--other-opt -one-more-opt");
   }
 
+  protected void checkObjcProviderLinkInputsInLinkAction(RuleType ruleType) throws Exception {
+    useConfiguration("--experimental_disable_jvm", "--cpu=ios_i386");
+
+    scratch.file("bin/defs.bzl",
+        "def _custom_rule_impl(ctx):",
+        "  return struct(objc=apple_common.new_objc_provider(",
+        "      link_inputs=depset(ctx.files.link_inputs)))",
+        "custom_rule = rule(",
+        "    _custom_rule_impl,",
+        "    attrs={'link_inputs': attr.label_list(allow_files=True)},",
+        ")");
+
+    scratch.file("bin/input.txt");
+
+    scratch.file("bin/BUILD",
+        "load('//bin:defs.bzl', 'custom_rule')",
+        "custom_rule(",
+        "    name = 'custom',",
+        "    link_inputs = ['input.txt'],",
+        ")");
+
+    ruleType.scratchTarget(scratch,
+        "srcs", "['main.m']",
+        "deps", "['//bin:custom']");
+
+    Artifact inputFile = getSourceArtifact("bin/input.txt");
+    assertThat(linkAction("//x").getInputs()).contains(inputFile);
+  }
+
   protected void checkAppleSdkVersionEnv(RuleType ruleType) throws Exception {
     ruleType.scratchTarget(scratch);
 
@@ -4883,5 +4893,37 @@ public abstract class ObjcRuleTestCase extends BuildViewTestCase {
             ActionsTestUtil.baseNamesOf(
                 getOutputGroup(target, OutputGroupProvider.FILES_TO_COMPILE)))
         .isEqualTo("a.o");
+  }
+
+  protected void checkCustomModuleMap(RuleType ruleType) throws Exception {
+    useConfiguration("--experimental_objc_enable_module_maps");
+    ruleType.scratchTarget(scratch, "srcs", "['a.m']", "deps", "['//z:testModuleMap']");
+    scratch.file("x/a.m");
+    scratch.file("z/b.m");
+    scratch.file("z/b.h");
+    scratch.file("y/module.modulemap", "module my_module_b { export *\n header b.h }");
+    scratch.file("z/BUILD",
+        "objc_library(",
+            "name = 'testModuleMap',",
+            "hdrs = ['b.h'],",
+            "srcs = ['b.m'],",
+            "module_map = '//y:mm'",
+         ")");
+    scratch.file("y/BUILD",
+        "filegroup(",
+            "name = 'mm',",
+            "srcs = ['module.modulemap']",
+        ")");
+
+    CommandAction compileActionA = compileAction("//z:testModuleMap", "b.o");
+    assertThat(compileActionA.getArguments()).doesNotContain("-fmodule-maps");
+    assertThat(compileActionA.getArguments()).doesNotContain("-fmodule-name");
+
+    ObjcProvider provider = providerForTarget("//z:testModuleMap");
+    assertThat(Artifact.toExecPaths(provider.get(MODULE_MAP)))
+        .containsExactly("y/module.modulemap");
+
+    provider = providerForTarget("//x:x");
+    assertThat(Artifact.toExecPaths(provider.get(MODULE_MAP))).contains("y/module.modulemap");
   }
 }

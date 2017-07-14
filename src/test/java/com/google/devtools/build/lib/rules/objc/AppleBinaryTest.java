@@ -861,6 +861,11 @@ public class AppleBinaryTest extends ObjcRuleTestCase {
   }
 
   @Test
+  public void testObjcProviderLinkInputsInLinkAction() throws Exception {
+    checkObjcProviderLinkInputsInLinkAction(RULE_TYPE);
+  }
+
+  @Test
   public void testAppleSdkVersionEnv() throws Exception {
     checkAppleSdkVersionEnv(RULE_TYPE);
   }
@@ -1360,8 +1365,7 @@ public class AppleBinaryTest extends ObjcRuleTestCase {
         ")");
     ConfiguredTarget binTarget = getConfiguredTarget("//bin:bin");
     AppleExecutableBinaryProvider executableBinaryProvider =
-        (AppleExecutableBinaryProvider) binTarget.get(
-            AppleExecutableBinaryProvider.SKYLARK_CONSTRUCTOR.getKey());
+        binTarget.get(AppleExecutableBinaryProvider.SKYLARK_CONSTRUCTOR);
     assertThat(executableBinaryProvider).isNotNull();
 
     CommandAction testLinkAction = linkAction("//test:test");
@@ -1408,5 +1412,10 @@ public class AppleBinaryTest extends ObjcRuleTestCase {
     CommandAction testLinkAction = linkAction("//test:test");
     assertThat(Joiner.on(" ").join(testLinkAction.getArguments()))
         .contains("@loader_path/Frameworks");
+  }
+
+  @Test
+  public void testCustomModuleMap() throws Exception {
+    checkCustomModuleMap(RULE_TYPE);
   }
 }

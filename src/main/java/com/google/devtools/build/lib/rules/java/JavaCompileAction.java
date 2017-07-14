@@ -79,6 +79,10 @@ public final class JavaCompileAction extends SpawnAction {
   static final ImmutableMap<String, String> UTF8_ENVIRONMENT =
       ImmutableMap.of("LC_CTYPE", "en_US.UTF-8");
 
+  // TODO(#3320): This is missing the configuration's action environment!
+  static final ActionEnvironment UTF8_ACTION_ENVIRONMENT =
+      ActionEnvironment.create(UTF8_ENVIRONMENT);
+
   private final CommandLine javaCompileCommandLine;
   private final CommandLine commandLine;
 
@@ -195,7 +199,7 @@ public final class JavaCompileAction extends SpawnAction {
         commandLine,
         false,
         // TODO(#3320): This is missing the configuration's action environment!
-        new ActionEnvironment(UTF8_ENVIRONMENT),
+        UTF8_ACTION_ENVIRONMENT,
         ImmutableMap.copyOf(executionInfo),
         progressMessage,
         EmptyRunfilesSupplier.INSTANCE,
@@ -421,19 +425,13 @@ public final class JavaCompileAction extends SpawnAction {
         checkNotNull(langtoolsJar);
         checkNotNull(javaBuilderJar);
 
-        CustomCommandLine.Builder builder =  CustomCommandLine.builder()
-            .addPath(javaExecutable)
-            // Langtools jar is placed on the boot classpath so that it can override classes
-            // in the JRE. Typically this has no effect since langtools.jar does not have
-            // classes in common with rt.jar. However, it is necessary when using a version
-            // of javac.jar generated via ant from the langtools build.xml that is of a
-            // different version than AND has an overlap in contents with the default
-            // run-time (eg while upgrading the Java version).
-            .addPaths("-Xbootclasspath/p:%s", langtoolsJar.getExecPath())
-            .add(javaBuilderJvmFlags);
+        CustomCommandLine.Builder builder =
+            CustomCommandLine.builder().addPath(javaExecutable).add(javaBuilderJvmFlags);
         if (!instrumentationJars.isEmpty()) {
           builder
-              .addJoinExecPaths("-cp", pathDelimiter,
+              .addJoinExecPaths(
+                  "-cp",
+                  pathDelimiter,
                   Iterables.concat(instrumentationJars, ImmutableList.of(javaBuilderJar)))
               .add(javaBuilderMainClass);
         } else {

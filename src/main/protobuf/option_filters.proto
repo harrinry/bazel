@@ -114,6 +114,13 @@ enum OptionEffectTag {
   // This option affects Bazel's terminal output, but should not affect its
   // operations. Verbosity and formatting options should have this tag.
   TERMINAL_OUTPUT = 12;
+
+  // This option is used to change command line arguments of one or more
+  // actions during the build.
+  ACTION_OPTIONS = 13;
+
+  // This option is used to change the testrunner environment of the build.
+  TEST_RUNNER = 14;
 }
 
 // On top of categorizing options by their intended purpose, these tags should
@@ -139,4 +146,13 @@ enum OptionMetadataTag {
   // This flag is deprecated. It might either no longer have any effect, or
   // might no longer be supported.
   DEPRECATED = 2;
+
+  // These are flags that should never be set by a user. This tag is used to
+  // make sure that options that form the protocol between the client and the
+  // server are not logged. These should have category UNDOCUMENTED.
+  HIDDEN = 3;
+
+  // Options which are INTERNAL are not recognized by the parser at all, and
+  // so cannot be used as flags. These should have category UNDOCUMENTED.
+  INTERNAL = 4;
 }

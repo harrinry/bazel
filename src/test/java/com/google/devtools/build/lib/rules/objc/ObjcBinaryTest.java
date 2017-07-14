@@ -555,11 +555,6 @@ public class ObjcBinaryTest extends ObjcRuleTestCase {
   }
 
   @Test
-  public void testLinkIncludeOrder_frameworksAndSystemLibsFirst() throws Exception {
-    checkLinkIncludeOrderFrameworksAndSystemLibsFirst(RULE_TYPE);
-  }
-  
-  @Test
   public void testLinksDylibsTransitively() throws Exception {
     checkLinksDylibsTransitively(RULE_TYPE);
   }
@@ -914,5 +909,10 @@ public class ObjcBinaryTest extends ObjcRuleTestCase {
   @Test
   public void testFilesToCompileOutputGroup() throws Exception {
     checkFilesToCompileOutputGroup(RULE_TYPE);
+  }
+
+  @Test
+  public void testCustomModuleMap() throws Exception {
+    checkCustomModuleMap(RULE_TYPE);
   }
 }
