@@ -23,8 +23,8 @@ import com.google.devtools.common.options.Converters.CommaSeparatedOptionListCon
 import com.google.devtools.common.options.EnumConverter;
 import com.google.devtools.common.options.Option;
 import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.proto.OptionFilters.OptionEffectTag;
-import com.google.devtools.common.options.proto.OptionFilters.OptionMetadataTag;
+import com.google.devtools.common.options.OptionEffectTag;
+import com.google.devtools.common.options.OptionMetadataTag;
 import java.util.List;
 
 /**
@@ -275,7 +275,7 @@ public class ObjcCommandLineOptions extends FragmentOptions {
 
   @Option(
     name = "experimental_objc_crosstool",
-    defaultValue = "off",
+    defaultValue = "all",
     documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
     effectTags = {OptionEffectTag.CHANGES_INPUTS},
     metadataTags = {OptionMetadataTag.INCOMPATIBLE_CHANGE},

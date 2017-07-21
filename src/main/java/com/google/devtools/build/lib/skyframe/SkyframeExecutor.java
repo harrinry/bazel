@@ -103,8 +103,9 @@ import com.google.devtools.build.lib.pkgcache.LoadingPhaseRunner;
 import com.google.devtools.build.lib.pkgcache.LoadingResult;
 import com.google.devtools.build.lib.pkgcache.PackageCacheOptions;
 import com.google.devtools.build.lib.pkgcache.PackageManager;
+import com.google.devtools.build.lib.pkgcache.PackageManager.PackageManagerStatistics;
 import com.google.devtools.build.lib.pkgcache.PathPackageLocator;
-import com.google.devtools.build.lib.pkgcache.TargetParsingCompleteEvent;
+import com.google.devtools.build.lib.pkgcache.TargetParsingPhaseTimeEvent;
 import com.google.devtools.build.lib.pkgcache.TestFilter;
 import com.google.devtools.build.lib.pkgcache.TransitivePackageLoader;
 import com.google.devtools.build.lib.profiler.AutoProfiler;
@@ -117,6 +118,7 @@ import com.google.devtools.build.lib.skyframe.PackageLookupFunction.CrossReposit
 import com.google.devtools.build.lib.skyframe.PackageLookupValue.BuildFileName;
 import com.google.devtools.build.lib.skyframe.SkyframeActionExecutor.ActionCompletedReceiver;
 import com.google.devtools.build.lib.skyframe.SkyframeActionExecutor.ProgressSupplier;
+import com.google.devtools.build.lib.skyframe.TargetPatternValue.TargetPatternKey;
 import com.google.devtools.build.lib.syntax.SkylarkSemanticsOptions;
 import com.google.devtools.build.lib.util.AbruptExitException;
 import com.google.devtools.build.lib.util.ExitCode;
@@ -1248,7 +1250,7 @@ public abstract class SkyframeExecutor implements WalkableGraphFactory {
   }
 
   EvaluationResult<TargetPatternValue> targetPatterns(
-      Iterable<SkyKey> patternSkyKeys,
+      Iterable<TargetPatternKey> patternSkyKeys,
       int numThreads,
       boolean keepGoing,
       ExtendedEventHandler eventHandler)
@@ -2080,23 +2082,16 @@ public abstract class SkyframeExecutor implements WalkableGraphFactory {
               + Iterables.toString(errorInfo.getRootCauses()), e);
         }
       }
-      long time = timer.stop().elapsed(TimeUnit.MILLISECONDS);
+      long timeMillis = timer.stop().elapsed(TimeUnit.MILLISECONDS);
 
       TargetPatternPhaseValue patternParsingValue = evalResult.get(key);
-      eventHandler.post(
-          new TargetParsingCompleteEvent(
-              patternParsingValue.getOriginalTargets(),
-              patternParsingValue.getFilteredTargets(),
-              patternParsingValue.getTestFilteredTargets(),
-              time,
-              targetPatterns,
-              patternParsingValue.getTargets()));
+      eventHandler.post(new TargetParsingPhaseTimeEvent(timeMillis));
       if (callback != null) {
         callback.notifyTargets(patternParsingValue.getTargets());
       }
       eventHandler.post(new LoadingPhaseCompleteEvent(
           patternParsingValue.getTargets(), patternParsingValue.getTestSuiteTargets(),
-          packageManager.getStatistics(), /*timeInMs=*/0));
+          PackageManagerStatistics.ZERO, /*timeInMs=*/0));
       return patternParsingValue.toLoadingResult();
     }
   }

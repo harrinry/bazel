@@ -29,8 +29,8 @@ import com.google.devtools.build.lib.rules.java.JavaConfiguration.OneVersionEnfo
 import com.google.devtools.common.options.EnumConverter;
 import com.google.devtools.common.options.Option;
 import com.google.devtools.common.options.OptionDocumentationCategory;
+import com.google.devtools.common.options.OptionEffectTag;
 import com.google.devtools.common.options.TriState;
-import com.google.devtools.common.options.proto.OptionFilters.OptionEffectTag;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -74,8 +74,8 @@ public class JavaOptions extends FragmentOptions {
     effectTags = {OptionEffectTag.UNKNOWN},
     help =
         "JAVABASE used for the JDK invoked by Blaze. This is the "
-            + "JAVABASE which will be used to execute external Java "
-            + "commands."
+            + "java_runtime_suite which will be used to execute "
+            + "external Java commands."
   )
   public String javaBase;
 
@@ -108,8 +108,8 @@ public class JavaOptions extends FragmentOptions {
     documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
     effectTags = {OptionEffectTag.UNKNOWN},
     help =
-        "JAVABASE used for the host JDK. This is the JAVABASE which is used to execute "
-            + " tools during a build."
+        "JAVABASE used for the host JDK. This is the java_runtime_suite which is used to execute "
+            + "tools during a build."
   )
   public String hostJavaBase;
 

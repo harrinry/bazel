@@ -11,18 +11,15 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+package com.google.devtools.common.options.testing;
 
-package com.google.devtools.build.lib.pkgcache;
+import com.google.devtools.build.lib.testutil.ClasspathSuite;
 
-import com.google.common.eventbus.EventBus;
-import com.google.devtools.build.lib.events.EventHandler;
+import org.junit.runner.RunWith;
 
 /**
- * Represents a listener which reports parse errors to the underlying
- * {@link EventHandler} and {@link EventBus} (if non-null).
+ * Test suite for options parsing framework.
  */
-public interface ParseFailureListener {
-
-  /** Reports a parsing failure. */
-  void parsingError(String badPattern, String message);
+@RunWith(ClasspathSuite.class)
+public class AllTests {
 }

@@ -79,10 +79,10 @@ import com.google.devtools.common.options.Converters;
 import com.google.devtools.common.options.EnumConverter;
 import com.google.devtools.common.options.Option;
 import com.google.devtools.common.options.OptionDocumentationCategory;
+import com.google.devtools.common.options.OptionEffectTag;
+import com.google.devtools.common.options.OptionMetadataTag;
 import com.google.devtools.common.options.OptionsParsingException;
 import com.google.devtools.common.options.TriState;
-import com.google.devtools.common.options.proto.OptionFilters.OptionEffectTag;
-import com.google.devtools.common.options.proto.OptionFilters.OptionMetadataTag;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -232,9 +232,14 @@ public final class BuildConfiguration implements BuildEvent {
     public PatchTransition topLevelConfigurationHook(Target toTarget) {
       return null;
     }
+
+    /** Returns a reserved set of action mnemonics. These cannot be used from a Skylark action. */
+    public ImmutableSet<String> getReservedActionMnemonics() {
+      return ImmutableSet.of();
+    }
   }
 
-  private static final Label convertLabel(String input) throws OptionsParsingException {
+  public static final Label convertOptionsLabel(String input) throws OptionsParsingException {
     try {
       // Check if the input starts with '/'. We don't check for "//" so that
       // we get a better error message if the user accidentally tries to use
@@ -254,7 +259,7 @@ public final class BuildConfiguration implements BuildEvent {
   public static class LabelConverter implements Converter<Label> {
     @Override
     public Label convert(String input) throws OptionsParsingException {
-      return convertLabel(input);
+      return convertOptionsLabel(input);
     }
 
     @Override
@@ -269,7 +274,7 @@ public final class BuildConfiguration implements BuildEvent {
     public List<Label> convert(String input) throws OptionsParsingException {
       ImmutableList.Builder result = ImmutableList.builder();
       for (String label : Splitter.on(",").omitEmptyStrings().split(input)) {
-        result.add(convertLabel(label));
+        result.add(convertOptionsLabel(label));
       }
       return result.build();
     }
@@ -287,7 +292,7 @@ public final class BuildConfiguration implements BuildEvent {
   public static class EmptyToNullLabelConverter implements Converter<Label> {
     @Override
     public Label convert(String input) throws OptionsParsingException {
-      return input.isEmpty() ? null : convertLabel(input);
+      return input.isEmpty() ? null : convertOptionsLabel(input);
     }
 
     @Override
@@ -310,7 +315,7 @@ public final class BuildConfiguration implements BuildEvent {
 
     @Override
     public Label convert(String input) throws OptionsParsingException {
-      return input.isEmpty() ? defaultValue : convertLabel(input);
+      return input.isEmpty() ? defaultValue : convertOptionsLabel(input);
     }
 
     @Override
@@ -335,7 +340,7 @@ public final class BuildConfiguration implements BuildEvent {
         } else {
           key = entry.substring(0, sepIndex);
           String value = entry.substring(sepIndex + 1);
-          label = value.isEmpty() ? null : convertLabel(value);
+          label = value.isEmpty() ? null : convertOptionsLabel(value);
         }
         if (result.containsKey(key)) {
           throw new OptionsParsingException("Key '" + key + "' appears twice");
@@ -458,6 +463,16 @@ public final class BuildConfiguration implements BuildEvent {
    * simplest way to ensure that is to return the input string.
    */
   public static class Options extends FragmentOptions implements Cloneable {
+    @Option(
+      name = "experimental_separate_genfiles_directory",
+      defaultValue = "true",
+      category = "semantics",
+      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+      effectTags = { OptionEffectTag.AFFECTS_OUTPUTS },
+      help = "Whether to have a separate genfiles directory or fold it into the bin directory"
+    )
+
+    public boolean separateGenfilesDirectory;
     @Option(
       name = "define",
       converter = Converters.AssignmentConverter.class,
@@ -1065,19 +1080,32 @@ public final class BuildConfiguration implements BuildEvent {
      * Values for --experimental_dynamic_configs.
      */
     public enum DynamicConfigsMode {
-      /** Don't use dynamic configurations. */
-      OFF,
       /** Use dynamic configurations, including only the fragments each rule needs. */
       ON,
       /** Use dynamic configurations, always including all fragments known to Blaze. */
       NOTRIM,
       /**
-       * Use untrimmed dynamic configurations unless an {@link Options} fragment needs static
-       * configurations. This is used to exempt features that don't yet work with dynamic configs.
+       * Same as NOTRIM.
+       *
+       * <p>This used to revert certain special cases to static configurations because dynamic
+       * configuration didn't support them. But now all builds use dynamic configurations. This
+       * value will be removed once we know no one is setting it.
+       *
+       * @deprecated use {@link #NOTRIM} instead
        */
-      // TODO(gregce): make this mode unnecesary by making everything compatible with dynamic
-      // configs. b/23280991 tracks the effort (LIPO is the main culprit).
-      NOTRIM_PARTIAL
+      @Deprecated
+      NOTRIM_PARTIAL,
+      /**
+       * Same as NOTRIM.
+       *
+       * <p>This used to disable dynamic configurations (while the feature was still being
+       * developed). But now all builds use dynamic configurations. This value will be removed
+       * once we know no one is setting it.
+       *
+       * @deprecated use {@link #NOTRIM} instead
+       */
+      @Deprecated
+      OFF
     }
 
     /**
@@ -1086,6 +1114,17 @@ public final class BuildConfiguration implements BuildEvent {
     public static class DynamicConfigsConverter extends EnumConverter<DynamicConfigsMode> {
       public DynamicConfigsConverter() {
         super(DynamicConfigsMode.class, "dynamic configurations mode");
+      }
+
+      @Override
+      public DynamicConfigsMode convert(String input) throws OptionsParsingException {
+        DynamicConfigsMode userSetValue = super.convert(input);
+        if (userSetValue == DynamicConfigsMode.OFF
+            || userSetValue == DynamicConfigsMode.NOTRIM_PARTIAL) {
+          return DynamicConfigsMode.NOTRIM;
+        } else {
+          return userSetValue;
+        }
       }
     }
 
@@ -1129,6 +1168,7 @@ public final class BuildConfiguration implements BuildEvent {
       host.useDynamicConfigurations = useDynamicConfigurations;
       host.commandLineBuildVariables = commandLineBuildVariables;
       host.enforceConstraints = enforceConstraints;
+      host.separateGenfilesDirectory = separateGenfilesDirectory;
 
       if (fallback) {
         // In the fallback case, we have already tried the target options and they didn't work, so
@@ -1185,6 +1225,7 @@ public final class BuildConfiguration implements BuildEvent {
   private final ImmutableMap<String, Class<? extends Fragment>> skylarkVisibleFragments;
   private final RepositoryName mainRepositoryName;
   private final DynamicTransitionMapper dynamicTransitionMapper;
+  private final ImmutableSet<String> reservedActionMnemonics;
 
   /**
    * Directories in the output tree.
@@ -1287,6 +1328,8 @@ public final class BuildConfiguration implements BuildEvent {
   private final Root coverageDirectoryForMainRepository;
   private final Root testlogsDirectoryForMainRepository;
   private final Root middlemanDirectoryForMainRepository;
+
+  private final boolean separateGenfilesDirectory;
 
   // Cache this value for quicker access. We don't cache it inside BuildOptions because BuildOptions
   // is mutable, so a cached value there could fall out of date when it's updated.
@@ -1426,11 +1469,6 @@ public final class BuildConfiguration implements BuildEvent {
               + "benefit from sharding certain tests. Please don't keep this option in your "
               + ".blazerc or continuous build"));
     }
-
-    if (trimConfigurations() && !options.useDistinctHostConfiguration) {
-      reporter.handle(Event.error(
-          "--nodistinct_host_configuration does not currently work with dynamic configurations"));
-    }
   }
 
   /**
@@ -1513,6 +1551,7 @@ public final class BuildConfiguration implements BuildEvent {
     this.buildOptions = buildOptions.clone();
     this.actionsEnabled = buildOptions.enableActions();
     this.options = buildOptions.get(Options.class);
+    this.separateGenfilesDirectory = options.separateGenfilesDirectory;
     this.mainRepositoryName = RepositoryName.createFromValidStrippedName(repositoryName);
     this.dynamicTransitionMapper = dynamicTransitionMapper;
 
@@ -1579,6 +1618,12 @@ public final class BuildConfiguration implements BuildEvent {
 
     checksum = Fingerprint.md5Digest(buildOptions.computeCacheKey());
     hashCode = computeHashCode();
+
+    ImmutableSet.Builder<String> reservedActionMnemonics = ImmutableSet.builder();
+    for (Fragment fragment : fragments.values()) {
+      reservedActionMnemonics.addAll(fragment.getReservedActionMnemonics());
+    }
+    this.reservedActionMnemonics = reservedActionMnemonics.build();
   }
 
   /**
@@ -2222,6 +2267,10 @@ public final class BuildConfiguration implements BuildEvent {
   }
 
   public Root getGenfilesDirectory(RepositoryName repositoryName) {
+    if (!separateGenfilesDirectory) {
+      return getBinDirectory(repositoryName);
+    }
+
     return repositoryName.isMain() || repositoryName.equals(mainRepositoryName)
         ? genfilesDirectoryForMainRepository
         : OutputDirectory.GENFILES.getRoot(
@@ -2546,7 +2595,7 @@ public final class BuildConfiguration implements BuildEvent {
     return options.useLLVMCoverageMapFormat;
   }
 
-  /** If false, AnalysisEnviroment doesn't register any actions created by the ConfiguredTarget. */
+  /** If false, AnalysisEnvironment doesn't register any actions created by the ConfiguredTarget. */
   public boolean isActionsEnabled() {
     return actionsEnabled;
   }
@@ -2763,6 +2812,10 @@ public final class BuildConfiguration implements BuildEvent {
 
   public ImmutableCollection<String> getSkylarkFragmentNames() {
     return skylarkVisibleFragments.keySet();
+  }
+
+  public ImmutableSet<String> getReservedActionMnemonics() {
+    return reservedActionMnemonics;
   }
 
   /**

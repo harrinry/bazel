@@ -49,8 +49,8 @@ def macro(name, visibility=None):
   # Creating a native genrule.
   native.genrule(
       name = name,
-      outs = [name + '.txt'],
-      cmd = 'echo hello > $@',
+      outs = [name + ".txt"],
+      cmd = "echo hello > $@",
       visibility = visibility,
   )
 ```
@@ -109,8 +109,8 @@ def cc_and_something_else_binary(name, srcs, deps, csrcs, cdeps):
 ## <a name="conditional-instantiation"></a>Conditional instantiation
 
 Macros can look at previously instantiated rules. This is done with
-`native.existing_rule`, which returns information on a single rule defined in the same
-`BUILD` file, eg.,
+`native.existing_rule`, which returns information on a single rule defined in
+the same `BUILD` file, eg.,
 
 ```python
 native.existing_rule("descriptor_proto")
@@ -192,8 +192,8 @@ def archive_cc_src_files(tag):
   native.genrule(cmd = "zip $@ $^", srcs = all_src, outs = ["out.zip"])
 ```
 
-Since `native.existing_rules` constructs a potentially large dictionary, you should avoid
-calling it repeatedly within BUILD file.
+Since `native.existing_rules` constructs a potentially large dictionary, you
+should avoid calling it repeatedly within BUILD file.
 
 ## <a name="empty"></a>Empty rule
 
@@ -281,7 +281,7 @@ def _impl(ctx):
   output = ctx.outputs.out
   input = ctx.file.file
   # The command may only access files declared in inputs.
-  ctx.action(
+  ctx.actions.run_shell(
       inputs=[input],
       outputs=[output],
       progress_message="Getting size of %s" % input.short_path,
@@ -358,7 +358,7 @@ def _impl(ctx):
   # The list of arguments we pass to the script.
   args = [ctx.outputs.out.path] + [f.path for f in ctx.files.srcs]
   # Action to call the script.
-  ctx.action(
+  ctx.actions.run(
       inputs=ctx.files.srcs,
       outputs=[ctx.outputs.out],
       arguments=args,
@@ -438,14 +438,13 @@ only to executable rules or files.
 
 ```python
 def _impl(ctx):
-  # ctx.new_file is used for temporary files.
-  # If it should be visible for user, declare it in rule.outputs instead.
-  f = ctx.new_file(ctx.configuration.bin_dir, "hello")
+  # ctx.actions.declare_file is used for temporary files.
+  f = ctx.actions.declare_file(ctx.configuration.bin_dir, "hello")
   # As with outputs, each time you declare a file,
   # you need an action to generate it.
-  ctx.file_action(output=f, content=ctx.attr.input_content)
+  ctx.actions.write(output=f, content=ctx.attr.input_content)
 
-  ctx.action(
+  ctx.actions.run(
       inputs=[f],
       outputs=[ctx.outputs.out],
       executable=ctx.executable.binary,
@@ -508,10 +507,10 @@ def _impl(ctx):
 
   return [DefaultInfo(
       # Create runfiles from the files specified in the data attribute.
-      # The shell executable - the output of this rule - can use them at runtime.
-      # It is also possible to define data_runfiles and default_runfiles.
-      # However if runfiles is specified it's not possible to define the above
-      # ones since runfiles sets them both.
+      # The shell executable - the output of this rule - can use them at
+      #  runtime. It is also possible to define data_runfiles and
+      # default_runfiles. However if runfiles is specified it's not possible to
+      # define the above ones since runfiles sets them both.
       # Remember, that the struct returned by the implementation function needs
       # to have a field named "runfiles" in order to create the actual runfiles
       # symlink tree.
@@ -545,7 +544,7 @@ execute(
     # the data.txt file in runfiles when this target is invoked as
     # "bazel run //pkg:e".
     command = "cat $(location :data.txt)",
-    data = [':data.txt']
+    data = [":data.txt"]
 )
 ```
 
@@ -586,9 +585,9 @@ def _impl(ctx):
     # Skip the processing
     processed = src
   else:
-    processed = ctx.new_file(ctx.label.name + "_processed")
+    processed = ctx.actions.declare_file(ctx.label.name + "_processed")
     # Run the selected binary
-    ctx.action(
+    ctx.actions.run(
         outputs = [processed],
         inputs = [ctx.file.src],
         progress_message="Apply filter '%s'" % ctx.attr.filter,
@@ -597,7 +596,7 @@ def _impl(ctx):
 
   # Compute the hash
   out = ctx.outputs.text
-  ctx.action(
+  ctx.actions.run(
       outputs = [out],
       inputs = [processed],
       command = "md5sum < %s > %s" % (processed.path, out.path))

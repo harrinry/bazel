@@ -232,6 +232,14 @@ public class SkyQueryEnvironment extends AbstractBlazeQueryEnvironment<Target>
             PrepareDepsOfPatternsFunction.getSkyKeys(universeKey, eventHandler));
   }
 
+  @Override
+  public void close() {
+    if (executor != null) {
+      executor.shutdownNow();
+      executor = null;
+    }
+  }
+
   private void beforeEvaluateQuery() throws InterruptedException {
     if (graph == null || !graphFactory.isUpToDate(universeKey)) {
       // If this environment is uninitialized or the graph factory needs to evaluate, do so. We
@@ -680,10 +688,8 @@ public class SkyQueryEnvironment extends AbstractBlazeQueryEnvironment<Target>
   private Pair<TargetPattern, ImmutableSet<PathFragment>> getPatternAndExcludes(String pattern)
       throws TargetParsingException, InterruptedException {
     TargetPatternKey targetPatternKey =
-        ((TargetPatternKey)
-            TargetPatternValue.key(
-                    pattern, TargetPatternEvaluator.DEFAULT_FILTERING_POLICY, parserPrefix)
-                .argument());
+        TargetPatternValue.key(
+            pattern, TargetPatternEvaluator.DEFAULT_FILTERING_POLICY, parserPrefix);
     ImmutableSet<PathFragment> subdirectoriesToExclude =
         targetPatternKey.getAllSubdirectoriesToExclude(blacklistPatternsSupplier);
     return Pair.of(targetPatternKey.getParsedPattern(), subdirectoriesToExclude);

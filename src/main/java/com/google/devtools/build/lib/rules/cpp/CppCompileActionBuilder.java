@@ -341,6 +341,7 @@ public class CppCompileActionBuilder {
     // This must be set either to false or true by CppSemantics, otherwise someone forgot to call
     // finalizeCompileActionBuilder on this builder.
     Preconditions.checkNotNull(shouldScanIncludes);
+    Preconditions.checkNotNull(featureConfiguration);
     boolean useHeaderModules =
         allowUsingHeaderModules
             && featureConfiguration.isEnabled(CppRuleClasses.USE_HEADER_MODULES);
@@ -350,6 +351,9 @@ public class CppCompileActionBuilder {
           featureConfiguration.getToolForAction(getActionName()).getExecutionRequirements()) {
         executionInfo.put(executionRequirement, "");
       }
+    } else {
+      errorCollector.accept(
+          String.format("Expected action_config for '%s' to be configured", getActionName()));
     }
 
     NestedSet<Artifact> realMandatoryInputs = buildMandatoryInputs();
@@ -522,6 +526,7 @@ public class CppCompileActionBuilder {
    */
   public CppCompileActionBuilder setFeatureConfiguration(
       FeatureConfiguration featureConfiguration) {
+    Preconditions.checkNotNull(featureConfiguration);
     this.featureConfiguration = featureConfiguration;
     return this;
   }

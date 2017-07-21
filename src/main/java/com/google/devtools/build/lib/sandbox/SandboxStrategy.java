@@ -18,6 +18,7 @@ import com.google.common.eventbus.EventBus;
 import com.google.devtools.build.lib.actions.ActionExecutionContext;
 import com.google.devtools.build.lib.actions.ActionInput;
 import com.google.devtools.build.lib.actions.ActionInputFileCache;
+import com.google.devtools.build.lib.actions.ActionInputPrefetcher;
 import com.google.devtools.build.lib.actions.ActionStatusMessage;
 import com.google.devtools.build.lib.actions.Artifact.ArtifactExpander;
 import com.google.devtools.build.lib.actions.ExecException;
@@ -38,23 +39,24 @@ import com.google.devtools.build.lib.vfs.PathFragment;
 import java.io.IOException;
 import java.util.SortedMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /** Abstract common ancestor for sandbox strategies implementing the common parts. */
 abstract class SandboxStrategy implements SandboxedSpawnActionContext {
   private final boolean verboseFailures;
-  private final SandboxOptions sandboxOptions;
   private final SpawnInputExpander spawnInputExpander;
   private final AbstractSandboxSpawnRunner spawnRunner;
+  private final ActionInputPrefetcher inputPrefetcher;
+  private final AtomicInteger execCount = new AtomicInteger();
 
   public SandboxStrategy(
       boolean verboseFailures,
-      SandboxOptions sandboxOptions,
       AbstractSandboxSpawnRunner spawnRunner) {
     this.verboseFailures = verboseFailures;
-    this.sandboxOptions = sandboxOptions;
     this.spawnInputExpander = new SpawnInputExpander(false);
     this.spawnRunner = spawnRunner;
+    this.inputPrefetcher = ActionInputPrefetcher.NONE;
   }
 
   @Override
@@ -79,8 +81,19 @@ abstract class SandboxStrategy implements SandboxedSpawnActionContext {
       actionExecutionContext.reportSubcommand(spawn);
     }
     final int timeoutSeconds = Spawns.getTimeoutSeconds(spawn);
-    final EventBus eventBus = actionExecutionContext.getEventBus();
     SpawnExecutionPolicy policy = new SpawnExecutionPolicy() {
+      private final int id = execCount.incrementAndGet();
+
+      @Override
+      public int getId() {
+        return id;
+      }
+
+      @Override
+      public void prefetchInputs(Iterable<ActionInput> inputs) throws IOException {
+        inputPrefetcher.prefetchFiles(inputs);
+      }
+
       @Override
       public ActionInputFileCache getActionInputFileCache() {
         return actionExecutionContext.getActionInputFileCache();
@@ -121,13 +134,12 @@ abstract class SandboxStrategy implements SandboxedSpawnActionContext {
       }
 
       @Override
-      public void report(ProgressStatus state) {
+      public void report(ProgressStatus state, String name) {
         // TODO(ulfjack): We should report more details to the UI.
+        EventBus eventBus = actionExecutionContext.getEventBus();
         switch (state) {
           case EXECUTING:
-            String strategyName = spawnRunner.getName();
-            eventBus.post(
-                ActionStatusMessage.runningStrategy(spawn.getResourceOwner(), strategyName));
+            eventBus.post(ActionStatusMessage.runningStrategy(spawn.getResourceOwner(), name));
             break;
           case SCHEDULING:
             eventBus.post(ActionStatusMessage.schedulingStrategy(spawn.getResourceOwner()));
@@ -141,7 +153,7 @@ abstract class SandboxStrategy implements SandboxedSpawnActionContext {
     if (result.status() != Status.SUCCESS || result.exitCode() != 0) {
       String message =
           CommandFailureUtils.describeCommandFailure(
-              true, spawn.getArguments(), spawn.getEnvironment(), null);
+              verboseFailures, spawn.getArguments(), spawn.getEnvironment(), null);
       throw new SpawnExecException(
           message, result, /*forciblyRunRemotely=*/false, /*catastrophe=*/false);
     }
@@ -150,10 +162,5 @@ abstract class SandboxStrategy implements SandboxedSpawnActionContext {
   @Override
   public String toString() {
     return "sandboxed";
-  }
-
-  @Override
-  public boolean shouldPropagateExecException() {
-    return verboseFailures && sandboxOptions.sandboxDebug;
   }
 }

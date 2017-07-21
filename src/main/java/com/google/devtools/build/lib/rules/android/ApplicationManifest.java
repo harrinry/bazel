@@ -46,13 +46,15 @@ import javax.annotation.Nullable;
 
 /** Represents a AndroidManifest, that may have been merged from dependencies. */
 public final class ApplicationManifest {
-  public static ApplicationManifest fromResourcesRule(RuleContext ruleContext) {
+
+  public static ApplicationManifest fromResourcesRule(RuleContext ruleContext)
+      throws RuleErrorException {
     final AndroidResourcesProvider resources = AndroidCommon.getAndroidResources(ruleContext);
     if (resources == null) {
       ruleContext.attributeError("manifest", "a resources or manifest attribute is mandatory.");
       return null;
     }
-    return new ApplicationManifest(
+    return fromExplicitManifest(
         ruleContext, Iterables.getOnlyElement(resources.getDirectAndroidResources()).getManifest());
   }
 
@@ -82,7 +84,7 @@ public final class ApplicationManifest {
     }
 
     ruleContext.registerAction(builder.build(ruleContext));
-    return new ApplicationManifest(ruleContext, result);
+    return new ApplicationManifest(ruleContext, result, targetAaptVersion);
   }
 
   public ApplicationManifest addMobileInstallStubApplication(RuleContext ruleContext)
@@ -112,7 +114,7 @@ public final class ApplicationManifest {
 
     ruleContext.registerAction(builder.build(ruleContext));
 
-    return new ApplicationManifest(ruleContext, stubManifest);
+    return new ApplicationManifest(ruleContext, stubManifest, targetAaptVersion);
   }
 
   public ApplicationManifest addInstantRunStubApplication(RuleContext ruleContext)
@@ -133,28 +135,30 @@ public final class ApplicationManifest {
 
     ruleContext.registerAction(builder.build(ruleContext));
 
-    return new ApplicationManifest(ruleContext, stubManifest);
+    return new ApplicationManifest(ruleContext, stubManifest, targetAaptVersion);
   }
 
-  public static ApplicationManifest fromRule(RuleContext ruleContext) {
-    return new ApplicationManifest(
+  public static ApplicationManifest fromRule(RuleContext ruleContext) throws RuleErrorException {
+    return fromExplicitManifest(
         ruleContext, ruleContext.getPrerequisiteArtifact("manifest", Mode.TARGET));
   }
 
-  public static ApplicationManifest fromExplicitManifest(
-      RuleContext ruleContext, Artifact manifest) {
-    return new ApplicationManifest(ruleContext, manifest);
+  public static ApplicationManifest fromExplicitManifest(RuleContext ruleContext, Artifact manifest)
+      throws RuleErrorException {
+    return new ApplicationManifest(
+        ruleContext, manifest, AndroidAaptVersion.chooseTargetAaptVersion(ruleContext));
   }
 
   /**
    * Generates an empty manifest for a rule that does not directly specify resources.
    *
-   * <p><strong>Note:</strong> This generated manifest can then be used as the primary manifest
-   * when merging with dependencies.
+   * <p><strong>Note:</strong> This generated manifest can then be used as the primary manifest when
+   * merging with dependencies.
    *
    * @return the generated ApplicationManifest
    */
-  public static ApplicationManifest generatedManifest(RuleContext ruleContext) {
+  public static ApplicationManifest generatedManifest(RuleContext ruleContext)
+      throws RuleErrorException {
     Artifact generatedManifest = ruleContext.getUniqueDirectoryArtifact(
         ruleContext.getRule().getName() + "_generated", PathFragment.create("AndroidManifest.xml"),
         ruleContext.getBinOrGenfilesDirectory());
@@ -172,7 +176,7 @@ public final class ApplicationManifest {
         .registerAction(
             FileWriteAction.create(
                 ruleContext, generatedManifest, contents, /*makeExecutable=*/ false));
-    return new ApplicationManifest(ruleContext, generatedManifest);
+    return fromExplicitManifest(ruleContext, generatedManifest);
   }
 
   private static ImmutableMap<String, String> getManifestValues(RuleContext context) {
@@ -200,10 +204,13 @@ public final class ApplicationManifest {
 
   private final Artifact manifest;
   private final ImmutableMap<String, String> manifestValues;
+  private final AndroidAaptVersion targetAaptVersion;
 
-  private ApplicationManifest(RuleContext ruleContext, Artifact manifest) {
+  private ApplicationManifest(
+      RuleContext ruleContext, Artifact manifest, AndroidAaptVersion targetAaptVersion) {
     this.manifest = manifest;
     this.manifestValues = getManifestValues(ruleContext);
+    this.targetAaptVersion = targetAaptVersion;
   }
 
   public ApplicationManifest mergeWith(RuleContext ruleContext, ResourceDependencies resourceDeps) {
@@ -222,7 +229,7 @@ public final class ApplicationManifest {
             ruleContext.getBinOrGenfilesDirectory());
         AndroidManifestMergeHelper.createMergeManifestAction(ruleContext, getManifest(),
             mergeeManifests.keySet(), ImmutableList.of("all"), outputManifest);
-        return new ApplicationManifest(ruleContext, outputManifest);
+        return new ApplicationManifest(ruleContext, outputManifest, targetAaptVersion);
       }
     } else {
       if (!mergeeManifests.isEmpty() || !manifestValues.isEmpty()) {
@@ -241,7 +248,7 @@ public final class ApplicationManifest {
             .setManifestOutput(outputManifest)
             .setLogOut(mergeLog)
             .build(ruleContext);
-        return new ApplicationManifest(ruleContext, outputManifest);
+        return new ApplicationManifest(ruleContext, outputManifest, targetAaptVersion);
       }
     }
     return this;
@@ -292,7 +299,7 @@ public final class ApplicationManifest {
         .setCustomPackage(customPackage)
         .setManifestOutput(outputManifest)
         .build(ruleContext);
-    return new ApplicationManifest(ruleContext, outputManifest);
+    return new ApplicationManifest(ruleContext, outputManifest, targetAaptVersion);
   }
 
   /** Packages up the manifest with assets from the rule and dependent resources. */
@@ -302,8 +309,7 @@ public final class ApplicationManifest {
       ResourceDependencies resourceDeps,
       Artifact rTxt,
       boolean incremental,
-      Artifact proguardCfg)
-      throws InterruptedException {
+      Artifact proguardCfg) throws InterruptedException, RuleErrorException {
     LocalResourceContainer data = new LocalResourceContainer.Builder(ruleContext)
         .withAssets(
             AndroidCommon.getAssetDir(ruleContext),
@@ -317,16 +323,12 @@ public final class ApplicationManifest {
         ruleContext,
         false, /* isLibrary */
         resourceDeps,
-        ResourceFilter.empty(ruleContext),
         ImmutableList.<String>of(), /* uncompressedExtensions */
         true, /* crunchPng */
         incremental,
         ResourceContainer.builderFromRule(ruleContext)
-            .setAssetsAndResourcesFrom(data)
-            .setManifest(getManifest())
             .setRTxt(rTxt)
-            .setApk(resourceApk)
-            .build(),
+            .setApk(resourceApk),
         data,
         proguardCfg,
         null, /* Artifact mainDexProguardCfg */
@@ -346,30 +348,27 @@ public final class ApplicationManifest {
       Artifact symbols,
       Artifact manifestOut,
       Artifact mergedResources,
-      boolean alwaysExportManifest)
-      throws InterruptedException {
+      boolean alwaysExportManifest) throws InterruptedException, RuleErrorException {
     if (ruleContext.hasErrors()) {
       return null;
     }
-    ResourceContainer.Builder resourceContainer =
+    ResourceContainer.Builder builder =
         ResourceContainer.builderFromRule(ruleContext)
-            .setAssetsAndResourcesFrom(data)
-            .setManifest(getManifest())
             .setRTxt(rTxt)
             .setSymbols(symbols)
             .setJavaPackageFrom(JavaPackageSource.MANIFEST);
     if (alwaysExportManifest) {
-      resourceContainer.setManifestExported(true);
+      builder.setManifestExported(true);
     }
+
     return createApk(
         ruleContext,
         true, /* isLibrary */
         resourceDeps,
-        ResourceFilter.empty(ruleContext),
         ImmutableList.<String>of(), /* List<String> uncompressedExtensions */
         false, /* crunchPng */
         false, /* incremental */
-        resourceContainer.build(),
+        builder,
         data,
         null, /* Artifact proguardCfg */
         null, /* Artifact mainDexProguardCfg */
@@ -385,7 +384,6 @@ public final class ApplicationManifest {
       RuleContext ruleContext,
       Artifact resourceApk,
       ResourceDependencies resourceDeps,
-      ResourceFilter resourceFilter,
       List<String> uncompressedExtensions,
       boolean crunchPng,
       Artifact proguardCfg)
@@ -407,15 +405,11 @@ public final class ApplicationManifest {
         ruleContext,
         false /* isLibrary */,
         resourceDeps,
-        resourceFilter,
         uncompressedExtensions,
         crunchPng,
         true,
         ResourceContainer.builderFromRule(ruleContext)
-            .setAssetsAndResourcesFrom(data)
-            .setManifest(getManifest())
-            .setApk(resourceApk)
-            .build(),
+            .setApk(resourceApk),
         data,
         proguardCfg,
         null, /* mainDexProguardCfg */
@@ -432,7 +426,7 @@ public final class ApplicationManifest {
       RuleContext ruleContext,
       Artifact resourceApk,
       ResourceDependencies resourceDeps,
-      Artifact rTxt,
+      @Nullable Artifact rTxt,
       ResourceFilter resourceFilter,
       List<String> uncompressedExtensions,
       boolean crunchPng,
@@ -457,6 +451,13 @@ public final class ApplicationManifest {
                 "resource_files",
                 Mode.TARGET,
                 FileProvider.class)).build();
+    ResourceContainer.Builder builder =
+        ResourceContainer.builderFromRule(ruleContext)
+            .setAssetsAndResourcesFrom(data)
+            .setManifest(getManifest())
+            .setRTxt(rTxt)
+            .setApk(resourceApk);
+
     if (ruleContext.hasErrors()) {
       return null;
     }
@@ -464,16 +465,10 @@ public final class ApplicationManifest {
         ruleContext,
         false /* isLibrary */,
         resourceDeps,
-        resourceFilter,
         uncompressedExtensions,
         crunchPng,
         false /* incremental */,
-        ResourceContainer.builderFromRule(ruleContext)
-            .setAssetsAndResourcesFrom(data)
-            .setManifest(getManifest())
-            .setRTxt(rTxt)
-            .setApk(resourceApk)
-            .build(),
+        builder,
         data,
         proguardCfg,
         mainDexProguardCfg,
@@ -490,7 +485,6 @@ public final class ApplicationManifest {
       ResourceDependencies resourceDeps,
       Artifact rTxt,
       Artifact symbols,
-      ResourceFilter resourceFilter,
       Artifact manifestOut,
       Artifact mergedResources,
       Artifact dataBindingInfoZip)
@@ -508,21 +502,36 @@ public final class ApplicationManifest {
     if (ruleContext.hasErrors()) {
       return null;
     }
+    ResourceContainer.Builder builder =
+        ResourceContainer.builderFromRule(ruleContext)
+            .setAssetsAndResourcesFrom(data)
+            .setManifest(getManifest())
+            .setSymbols(symbols)
+            .setRTxt(rTxt);
+
+    if (targetAaptVersion == AndroidAaptVersion.AAPT2) {
+
+      builder
+          .setAapt2JavaSourceJar(
+              ruleContext.getImplicitOutputArtifact(
+                  AndroidRuleClasses.ANDROID_RESOURCES_AAPT2_SOURCE_JAR))
+          .setAapt2RTxt(
+              ruleContext.getImplicitOutputArtifact(
+                  AndroidRuleClasses.ANDROID_RESOURCES_AAPT2_R_TXT))
+          .setCompiledSymbols(
+              ruleContext.getImplicitOutputArtifact(AndroidRuleClasses.ANDROID_COMPILED_SYMBOLS))
+          .setStaticLibrary(
+              ruleContext.getImplicitOutputArtifact(
+                  AndroidRuleClasses.ANDROID_RESOURCES_AAPT2_LIBRARY_APK));
+    }
     return createApk(
         ruleContext,
         true /* isLibrary */,
         resourceDeps,
-        resourceFilter,
         ImmutableList.<String>of() /* uncompressedExtensions */,
         false /* crunchPng */,
         false /* incremental */,
-        ResourceContainer.builderFromRule(ruleContext)
-            .setAssetsAndResourcesFrom(data)
-            .setManifest(getManifest())
-            .setRTxt(rTxt)
-            .setSymbols(symbols)
-            .setApk(null)
-            .build(),
+        builder,
         data,
         null /* proguardCfg */,
         null /* mainDexProguardCfg */,
@@ -537,11 +546,10 @@ public final class ApplicationManifest {
       RuleContext ruleContext,
       boolean isLibrary,
       ResourceDependencies resourceDeps,
-      ResourceFilter resourceFilter,
       List<String> uncompressedExtensions,
       boolean crunchPng,
       boolean incremental,
-      ResourceContainer maybeInlinedResourceContainer,
+      ResourceContainer.Builder maybeInlinedResourceContainerBuilder,
       LocalResourceContainer data,
       Artifact proguardCfg,
       @Nullable Artifact mainDexProguardCfg,
@@ -549,22 +557,30 @@ public final class ApplicationManifest {
       Artifact mergedResources,
       Artifact dataBindingInfoZip,
       @Nullable Artifact featureOf,
-      @Nullable Artifact featureAfter) throws InterruptedException {
-    ResourceContainer resourceContainer = checkForInlinedResources(
-        maybeInlinedResourceContainer,
-        resourceDeps.getResources(),  // TODO(bazel-team): Figure out if we really need to check
-        // the ENTIRE transitive closure, or just the direct dependencies. Given that each rule with
-        // resources would check for inline resources, we can rely on the previous rule to have
-        // checked its dependencies.
-        ruleContext);
+      @Nullable Artifact featureAfter)
+      throws InterruptedException, RuleErrorException {
+    // Filter the resources during analysis to prevent processing of and dependencies on unwanted
+    // resources during execution.
+    ResourceFilter resourceFilter = ResourceFilter.fromRuleContext(ruleContext);
+    data = data.filter(ruleContext, resourceFilter);
+    resourceDeps = resourceDeps.filter(ruleContext, resourceFilter);
+
+    // Now that the LocalResourceContainer has been filtered, we can build a filtered resource
+    // container from it.
+    ResourceContainer resourceContainer =
+        checkForInlinedResources(
+            maybeInlinedResourceContainerBuilder
+                .setManifest(getManifest())
+                .setAssetsAndResourcesFrom(data)
+                .build(),
+            resourceDeps.getResources(), // TODO(bazel-team): Figure out if we really need to check
+            // the ENTIRE transitive closure, or just the direct dependencies. Given that each rule
+            // with resources would check for inline resources, we can rely on the previous rule to
+            // have checked its dependencies.
+            ruleContext);
     if (ruleContext.hasErrors()) {
       return null;
     }
-
-    // Filter the resources during analysis to prevent processing of and dependencies on unwanted
-    // resources during execution.
-    resourceContainer = resourceContainer.filter(ruleContext, resourceFilter);
-    resourceDeps = resourceDeps.filter(ruleContext, resourceFilter);
 
     ResourceContainer processed;
     if (isLibrary && AndroidCommon.getAndroidConfig(ruleContext).useParallelResourceProcessing()) {
@@ -651,7 +667,7 @@ public final class ApplicationManifest {
                     .getFragment(AndroidConfiguration.class).throwOnResourceConflict());
       if (!incremental) {
         builder
-            .targetAaptVersion(AndroidAaptVersion.AAPT)
+            .targetAaptVersion(targetAaptVersion)
             .setRTxtOut(resourceContainer.getRTxt())
             .setSymbols(resourceContainer.getSymbols())
             .setSourceJarOut(resourceContainer.getJavaSourceJar());

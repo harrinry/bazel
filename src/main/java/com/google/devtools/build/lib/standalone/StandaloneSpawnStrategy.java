@@ -17,6 +17,7 @@ import com.google.common.eventbus.EventBus;
 import com.google.devtools.build.lib.actions.ActionExecutionContext;
 import com.google.devtools.build.lib.actions.ActionInput;
 import com.google.devtools.build.lib.actions.ActionInputFileCache;
+import com.google.devtools.build.lib.actions.ActionInputPrefetcher;
 import com.google.devtools.build.lib.actions.ActionStatusMessage;
 import com.google.devtools.build.lib.actions.Artifact.ArtifactExpander;
 import com.google.devtools.build.lib.actions.ExecException;
@@ -26,7 +27,6 @@ import com.google.devtools.build.lib.actions.Spawn;
 import com.google.devtools.build.lib.actions.SpawnActionContext;
 import com.google.devtools.build.lib.actions.Spawns;
 import com.google.devtools.build.lib.actions.UserExecException;
-import com.google.devtools.build.lib.exec.ActionInputPrefetcher;
 import com.google.devtools.build.lib.exec.SpawnExecException;
 import com.google.devtools.build.lib.exec.SpawnInputExpander;
 import com.google.devtools.build.lib.exec.SpawnResult;
@@ -45,6 +45,7 @@ import com.google.devtools.build.lib.vfs.Path;
 import com.google.devtools.build.lib.vfs.PathFragment;
 import java.io.IOException;
 import java.util.SortedMap;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Strategy that uses subprocessing to execute a process.
@@ -52,19 +53,21 @@ import java.util.SortedMap;
 @ExecutionStrategy(name = { "standalone", "local" }, contextType = SpawnActionContext.class)
 public class StandaloneSpawnStrategy implements SpawnActionContext {
   private final boolean verboseFailures;
+  private final ActionInputPrefetcher actionInputPrefetcher;
   private final LocalSpawnRunner localSpawnRunner;
+  private final AtomicInteger execCount = new AtomicInteger();
 
   public StandaloneSpawnStrategy(
       Path execRoot, ActionInputPrefetcher actionInputPrefetcher,
       LocalExecutionOptions localExecutionOptions, boolean verboseFailures, String productName,
       ResourceManager resourceManager) {
+    this.actionInputPrefetcher = actionInputPrefetcher;
     this.verboseFailures = verboseFailures;
     LocalEnvProvider localEnvProvider = OS.getCurrent() == OS.DARWIN
         ? new XCodeLocalEnvProvider()
         : LocalEnvProvider.UNMODIFIED;
     this.localSpawnRunner = new LocalSpawnRunner(
         execRoot,
-        actionInputPrefetcher,
         localExecutionOptions,
         resourceManager,
         productName,
@@ -80,6 +83,20 @@ public class StandaloneSpawnStrategy implements SpawnActionContext {
     final int timeoutSeconds = Spawns.getTimeoutSeconds(spawn);
     final EventBus eventBus = actionExecutionContext.getEventBus();
     SpawnExecutionPolicy policy = new SpawnExecutionPolicy() {
+      private final int id = execCount.incrementAndGet();
+
+      @Override
+      public int getId() {
+        return id;
+      }
+
+      @Override
+      public void prefetchInputs(Iterable<ActionInput> inputs) throws IOException {
+        if (Spawns.shouldPrefetchInputsForLocalExecution(spawn)) {
+          actionInputPrefetcher.prefetchFiles(inputs);
+        }
+      }
+
       @Override
       public ActionInputFileCache getActionInputFileCache() {
         return actionExecutionContext.getActionInputFileCache();
@@ -116,12 +133,10 @@ public class StandaloneSpawnStrategy implements SpawnActionContext {
       }
 
       @Override
-      public void report(ProgressStatus state) {
+      public void report(ProgressStatus state, String name) {
         switch (state) {
           case EXECUTING:
-            String strategyName = "local";
-            eventBus.post(
-                ActionStatusMessage.runningStrategy(spawn.getResourceOwner(), strategyName));
+            eventBus.post(ActionStatusMessage.runningStrategy(spawn.getResourceOwner(), name));
             break;
           case SCHEDULING:
             eventBus.post(ActionStatusMessage.schedulingStrategy(spawn.getResourceOwner()));
@@ -153,10 +168,5 @@ public class StandaloneSpawnStrategy implements SpawnActionContext {
   @Override
   public String toString() {
     return "standalone";
-  }
-
-  @Override
-  public boolean shouldPropagateExecException() {
-    return false;
   }
 }

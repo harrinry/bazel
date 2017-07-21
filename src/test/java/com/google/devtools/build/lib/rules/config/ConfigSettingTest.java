@@ -32,8 +32,8 @@ import com.google.devtools.build.lib.testutil.TestConstants;
 import com.google.devtools.build.lib.testutil.TestRuleClassProvider;
 import com.google.devtools.common.options.Option;
 import com.google.devtools.common.options.OptionDocumentationCategory;
-import com.google.devtools.common.options.proto.OptionFilters.OptionEffectTag;
-import com.google.devtools.common.options.proto.OptionFilters.OptionMetadataTag;
+import com.google.devtools.common.options.OptionEffectTag;
+import com.google.devtools.common.options.OptionMetadataTag;
 import java.util.Map;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -285,6 +285,48 @@ public class ConfigSettingTest extends BuildViewTestCase {
     useConfiguration("--define", "foo=bar", "--define", "bar=baz", "--define", "foo=nope");
     assertThat(getConfigMatchingProvider("//test:match").matches()).isFalse();
     useConfiguration("--define", "foo=nope", "--define", "bar=baz", "--define", "foo=bar");
+    assertThat(getConfigMatchingProvider("//test:match").matches()).isTrue();
+  }
+
+  @Test
+  public void multipleDefines() throws Exception {
+    scratch.file("test/BUILD",
+        "config_setting(",
+        "    name = 'match',",
+        "    define_values = {",
+        "        'foo1': 'bar',",
+        "        'foo2': 'baz',",
+        "    })");
+
+    useConfiguration("");
+    assertThat(getConfigMatchingProvider("//test:match").matches()).isFalse();
+    useConfiguration("--define", "foo1=bar");
+    assertThat(getConfigMatchingProvider("//test:match").matches()).isFalse();
+    useConfiguration("--define", "foo2=baz");
+    assertThat(getConfigMatchingProvider("//test:match").matches()).isFalse();
+    useConfiguration("--define", "foo1=bar", "--define", "foo2=baz");
+    assertThat(getConfigMatchingProvider("//test:match").matches()).isTrue();
+  }
+
+  @Test
+  public void definesCrossAttributes() throws Exception {
+    scratch.file("test/BUILD",
+        "config_setting(",
+        "    name = 'match',",
+        "    values = {",
+        "        'define': 'a=c'",
+        "    },",
+        "    define_values = {",
+        "        'b': 'd',",
+        "    })");
+
+    useConfiguration("");
+    assertThat(getConfigMatchingProvider("//test:match").matches()).isFalse();
+    useConfiguration("--define", "a=c");
+    assertThat(getConfigMatchingProvider("//test:match").matches()).isFalse();
+    useConfiguration("--define", "b=d");
+    assertThat(getConfigMatchingProvider("//test:match").matches()).isFalse();
+    useConfiguration("--define", "a=c", "--define", "b=d");
     assertThat(getConfigMatchingProvider("//test:match").matches()).isTrue();
   }
 

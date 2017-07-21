@@ -57,8 +57,6 @@ public class BuildConfigurationTest extends ConfigurationTestCase {
         .isEqualTo(outputDirPrefix + "/bin");
     assertThat(config.getIncludeDirectory(RepositoryName.MAIN).getPath().toString())
         .isEqualTo(outputDirPrefix + "/include");
-    assertThat(config.getGenfilesDirectory(RepositoryName.MAIN).getPath().toString())
-        .isEqualTo(outputDirPrefix + "/genfiles");
     assertThat(config.getTestLogsDirectory(RepositoryName.MAIN).getPath().toString())
         .isEqualTo(outputDirPrefix + "/testlogs");
   }
@@ -295,15 +293,6 @@ public class BuildConfigurationTest extends ConfigurationTestCase {
   }
 
   @Test
-  public void testNoDistinctHostConfigurationUnsupportedWithTrimmedConfigs() throws Exception {
-    checkError(
-        "--nodistinct_host_configuration does not currently work with dynamic configurations",
-        "--nodistinct_host_configuration", "--experimental_dynamic_configs=on");
-    assertThat(create("--nodistinct_host_configuration", "--experimental_dynamic_configs=notrim"))
-        .isNotNull();
-  }
-
-  @Test
   public void testEqualsOrIsSupersetOf() throws Exception {
     BuildConfiguration config = create();
     BuildConfiguration trimmedConfig =
@@ -428,5 +417,15 @@ public class BuildConfigurationTest extends ConfigurationTestCase {
         ".-> //skylark:one.bzl",
         "|   //skylark:two.bzl",
         "`-- //skylark:one.bzl"));
+  }
+
+  @Test
+  public void testNoSeparateGenfilesDirectory() throws Exception {
+    BuildConfiguration target = create("--noexperimental_separate_genfiles_directory");
+    BuildConfiguration host = createHost("--noexperimental_separate_genfiles_directory");
+    assertThat(target.getGenfilesDirectory(RepositoryName.MAIN))
+        .isEqualTo(target.getBinDirectory(RepositoryName.MAIN));
+    assertThat(host.getGenfilesDirectory(RepositoryName.MAIN))
+        .isEqualTo(host.getBinDirectory(RepositoryName.MAIN));
   }
 }

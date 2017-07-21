@@ -24,14 +24,14 @@ import com.google.devtools.build.lib.events.ExtendedEventHandler;
 import com.google.devtools.build.lib.packages.Target;
 import com.google.devtools.build.lib.pkgcache.FilteringPolicies;
 import com.google.devtools.build.lib.pkgcache.FilteringPolicy;
-import com.google.devtools.build.lib.pkgcache.ParseFailureListener;
+import com.google.devtools.build.lib.pkgcache.ParsingFailedEvent;
 import com.google.devtools.build.lib.pkgcache.TargetPatternEvaluator;
+import com.google.devtools.build.lib.skyframe.TargetPatternValue.TargetPatternKey;
 import com.google.devtools.build.lib.skyframe.TargetPatternValue.TargetPatternSkyKeyOrException;
 import com.google.devtools.build.lib.util.Preconditions;
 import com.google.devtools.build.lib.vfs.PathFragment;
 import com.google.devtools.build.skyframe.ErrorInfo;
 import com.google.devtools.build.skyframe.EvaluationResult;
-import com.google.devtools.build.skyframe.SkyKey;
 import com.google.devtools.build.skyframe.WalkableGraph;
 import java.util.Collection;
 import java.util.List;
@@ -105,22 +105,24 @@ final class SkyframeTargetPatternEvaluator implements TargetPatternEvaluator {
     Iterable<TargetPatternSkyKeyOrException> keysMaybe =
         TargetPatternValue.keys(targetPatterns, policy, offset);
 
-    ImmutableList.Builder<SkyKey> builder = ImmutableList.builder();
+    ImmutableList.Builder<TargetPatternKey> builder = ImmutableList.builder();
     for (TargetPatternSkyKeyOrException skyKeyOrException : keysMaybe) {
       try {
         builder.add(skyKeyOrException.getSkyKey());
       } catch (TargetParsingException e) {
+        // We report a parsing failed exception to the event bus here in case the pattern did not
+        // successfully parse (which happens before the SkyKey is created). Otherwise the
+        // TargetPatternFunction posts the event.
+        eventHandler.post(
+            new ParsingFailedEvent(skyKeyOrException.getOriginalPattern(),  e.getMessage()));
         if (!keepGoing) {
           throw e;
         }
         String pattern = skyKeyOrException.getOriginalPattern();
         eventHandler.handle(Event.error("Skipping '" + pattern + "': " + e.getMessage()));
-        if (eventHandler instanceof ParseFailureListener) {
-          ((ParseFailureListener) eventHandler).parsingError(pattern, e.getMessage());
-        }
       }
     }
-    ImmutableList<SkyKey> skyKeys = builder.build();
+    ImmutableList<TargetPatternKey> skyKeys = builder.build();
     return parseTargetPatternKeys(
         targetPatterns,
         skyKeys,
@@ -138,9 +140,9 @@ final class SkyframeTargetPatternEvaluator implements TargetPatternEvaluator {
         : new BuildTargetPatternsResultBuilder();
   }
 
-  ResolvedTargets<Target> parseTargetPatternKeys(
+  private ResolvedTargets<Target> parseTargetPatternKeys(
       List<String> targetPattern,
-      Iterable<SkyKey> patternSkyKeys,
+      Iterable<TargetPatternKey> patternSkyKeys,
       int numThreads,
       boolean keepGoing,
       ExtendedEventHandler eventHandler,
@@ -150,19 +152,17 @@ final class SkyframeTargetPatternEvaluator implements TargetPatternEvaluator {
         skyframeExecutor.targetPatterns(patternSkyKeys, numThreads, keepGoing, eventHandler);
 
     String errorMessage = null;
-    for (SkyKey key : patternSkyKeys) {
+    for (TargetPatternKey key : patternSkyKeys) {
       TargetPatternValue resultValue = result.get(key);
       if (resultValue != null) {
         ResolvedTargets<Label> results = resultValue.getTargets();
-        if (((TargetPatternValue.TargetPatternKey) key.argument()).isNegative()) {
+        if (key.isNegative()) {
           finalTargetSetEvaluator.addLabelsOfNegativePattern(results);
         } else {
           finalTargetSetEvaluator.addLabelsOfPositivePattern(results);
         }
       } else {
-        TargetPatternValue.TargetPatternKey patternKey =
-            (TargetPatternValue.TargetPatternKey) key.argument();
-        String rawPattern = patternKey.getPattern();
+        String rawPattern = key.getPattern();
         ErrorInfo error = result.errorMap().get(key);
         if (error == null) {
           Preconditions.checkState(!keepGoing);
@@ -187,11 +187,6 @@ final class SkyframeTargetPatternEvaluator implements TargetPatternEvaluator {
           eventHandler.post(PatternExpandingError.skipped(rawPattern, errorMessage));
         }
         finalTargetSetEvaluator.setError();
-
-        if (eventHandler instanceof ParseFailureListener) {
-          ParseFailureListener parseListener = (ParseFailureListener) eventHandler;
-          parseListener.parsingError(rawPattern,  errorMessage);
-        }
       }
     }
 

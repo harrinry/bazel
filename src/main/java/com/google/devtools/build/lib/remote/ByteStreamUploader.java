@@ -39,6 +39,7 @@ import io.grpc.Channel;
 import io.grpc.ClientCall;
 import io.grpc.Metadata;
 import io.grpc.Status;
+import io.grpc.Status.Code;
 import io.grpc.StatusException;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -49,6 +50,8 @@ import java.util.UUID;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
 
@@ -58,6 +61,8 @@ import javax.annotation.concurrent.GuardedBy;
  * <p>Users must call {@link #shutdown()} before exiting.
  */
 final class ByteStreamUploader {
+
+  private static final Logger logger = Logger.getLogger(ByteStreamUploader.class.getName());
 
   private final String instanceName;
   private final Channel channel;
@@ -348,10 +353,10 @@ final class ByteStreamUploader {
 
             @Override
             public void onClose(Status status, Metadata trailers) {
-              if (!status.isOk()) {
-                listener.failure(status);
-              } else {
+              if (status.isOk() || Code.ALREADY_EXISTS.equals(status.getCode())) {
                 listener.success();
+              } else {
+                listener.failure(status);
               }
             }
 
@@ -389,7 +394,16 @@ final class ByteStreamUploader {
 
                   call.sendMessage(request);
                 } catch (IOException e) {
-                  call.cancel("Failed to read next chunk.", e);
+                  try {
+                    chunker.reset();
+                  } catch (IOException e1) {
+                    // This exception indicates that closing the underlying input stream failed.
+                    // We don't expect this to ever happen, but don't want to swallow the exception
+                    // completely.
+                    logger.log(Level.WARNING, "Chunker failed closing data source.", e1);
+                  } finally {
+                    call.cancel("Failed to read next chunk.", e);
+                  }
                 }
               }
             }

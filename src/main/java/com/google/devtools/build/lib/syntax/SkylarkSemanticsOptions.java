@@ -16,10 +16,10 @@ package com.google.devtools.build.lib.syntax;
 
 import com.google.devtools.common.options.Option;
 import com.google.devtools.common.options.OptionDocumentationCategory;
+import com.google.devtools.common.options.OptionEffectTag;
+import com.google.devtools.common.options.OptionMetadataTag;
 import com.google.devtools.common.options.OptionsBase;
 import com.google.devtools.common.options.UsesOnlyCoreTypes;
-import com.google.devtools.common.options.proto.OptionFilters.OptionEffectTag;
-import com.google.devtools.common.options.proto.OptionFilters.OptionMetadataTag;
 import java.io.Serializable;
 
 /**
@@ -191,7 +191,7 @@ public class SkylarkSemanticsOptions extends OptionsBase implements Serializable
       documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
       effectTags = {OptionEffectTag.UNKNOWN},
       metadataTags = {OptionMetadataTag.INCOMPATIBLE_CHANGE},
-      help = "If set to true, the API to create actions is only avaliable on `ctx.actions`, "
+      help = "If set to true, the API to create actions is only available on `ctx.actions`, "
           + "not on `ctx`."
   )
   public boolean incompatibleNewActionsApi;
