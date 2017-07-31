@@ -28,6 +28,7 @@ import static com.google.devtools.build.lib.syntax.Type.STRING_LIST;
 import static com.google.devtools.build.lib.util.FileTypeSet.ANY_FILE;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Lists;
 import com.google.devtools.build.lib.analysis.BaseRuleClasses;
@@ -48,6 +49,7 @@ import com.google.devtools.build.lib.packages.Rule;
 import com.google.devtools.build.lib.packages.RuleClass;
 import com.google.devtools.build.lib.packages.RuleClass.Builder;
 import com.google.devtools.build.lib.packages.RuleClass.Builder.RuleClassType;
+import com.google.devtools.build.lib.packages.RuleTransitionFactory;
 import com.google.devtools.build.lib.packages.TriState;
 import com.google.devtools.build.lib.rules.android.AndroidConfiguration.AndroidAaptVersion;
 import com.google.devtools.build.lib.rules.android.AndroidConfiguration.AndroidManifestMerger;
@@ -286,6 +288,25 @@ public final class AndroidRuleClasses {
       printer.append("android_common.multi_cpu_configuration");
     }
   }
+
+  /**
+   * Turns of dynamic resource filtering for non-Android targets. This prevents unnecessary
+   * build graph bloat. For example, there's no point analyzing distinct cc_library tarets for
+   * different resource filter configurations because cc_library semantics doesn't care about
+   * filters.
+   */
+  public static final RuleTransitionFactory REMOVE_DYNAMIC_RESOURCE_FILTERING =
+      new RuleTransitionFactory() {
+        /** Dependencies of these rule class types need to keep resource filtering info. */
+        private final ImmutableSet<String> keepFilterRuleClasses =
+            ImmutableSet.of("android_binary", "android_library");
+
+        @Override
+        public Attribute.Transition buildTransitionFor(Rule depRule) {
+          return keepFilterRuleClasses.contains(depRule.getRuleClass())
+              ? null : ResourceFilter.REMOVE_DYNAMICALLY_CONFIGURED_RESOURCE_FILTERING_TRANSITION;
+        }
+      };
 
   public static final FileType ANDROID_IDL = FileType.of(".aidl");
 
@@ -563,13 +584,11 @@ public final class AndroidRuleClasses {
           These compiler options are passed to javac after the global compiler options.</p>
           <!-- #END_BLAZE_RULE.ATTRIBUTE --> */
           .add(attr("javacopts", STRING_LIST))
-          // TODO(ahumesky): It would be better to put this dependency in //tools/android somehow
-          // like all the rest of android tools.
           .add(
               attr("$jarjar_bin", LABEL)
                   .cfg(HOST)
                   .exec()
-                  .value(env.getToolsLabel("//third_party/java/jarjar:jarjar_bin")))
+                  .value(env.getToolsLabel("//tools/android:jarjar_bin")))
           .add(
               attr("$idlclass", LABEL)
                   .cfg(HOST)

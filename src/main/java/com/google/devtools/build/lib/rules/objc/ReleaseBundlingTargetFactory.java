@@ -25,6 +25,7 @@ import com.google.devtools.build.lib.rules.RuleConfiguredTargetFactory;
 import com.google.devtools.build.lib.rules.apple.AppleConfiguration;
 import com.google.devtools.build.lib.rules.apple.ApplePlatform.PlatformType;
 import com.google.devtools.build.lib.rules.apple.DottedVersion;
+import com.google.devtools.build.lib.rules.apple.XcodeConfig;
 import com.google.devtools.build.lib.rules.objc.ReleaseBundlingSupport.LinkedBinary;
 import com.google.devtools.build.lib.rules.test.InstrumentedFilesCollector;
 import com.google.devtools.build.lib.rules.test.InstrumentedFilesProvider;
@@ -79,7 +80,7 @@ public abstract class ReleaseBundlingTargetFactory implements RuleConfiguredTarg
 
     RuleConfiguredTargetBuilder targetBuilder =
         ObjcRuleClasses.ruleConfiguredTarget(ruleContext, filesToBuild.build())
-            .addProvider(XcTestAppProvider.class, releaseBundlingSupport.xcTestAppProvider())
+            .addNativeDeclaredProvider(releaseBundlingSupport.xcTestAppProvider())
             .addProvider(
                 InstrumentedFilesProvider.class,
                 InstrumentedFilesCollector.forward(ruleContext, "binary"));
@@ -87,7 +88,6 @@ public abstract class ReleaseBundlingTargetFactory implements RuleConfiguredTarg
     ObjcProvider exposedObjcProvider = exposedObjcProvider(ruleContext, releaseBundlingSupport);
     if (exposedObjcProvider != null) {
       targetBuilder
-          .addProvider(ObjcProvider.class, exposedObjcProvider)
           .addNativeDeclaredProvider(exposedObjcProvider);
     }
 
@@ -107,8 +107,7 @@ public abstract class ReleaseBundlingTargetFactory implements RuleConfiguredTarg
    * configuration).
    */
   protected DottedVersion bundleMinimumOsVersion(RuleContext ruleContext) {
-    return ruleContext.getFragment(AppleConfiguration.class)
-        .getMinimumOsForPlatformType(PlatformType.IOS);
+    return XcodeConfig.getMinimumOsForPlatformType(ruleContext, PlatformType.IOS);
   }
 
   /**
@@ -143,7 +142,7 @@ public abstract class ReleaseBundlingTargetFactory implements RuleConfiguredTarg
     for (Attribute attribute : dependencyAttributes) {
       builder.addDepObjcProviders(
           ruleContext.getPrerequisites(
-              attribute.getName(), attribute.getAccessMode(), ObjcProvider.class));
+              attribute.getName(), attribute.getAccessMode(), ObjcProvider.SKYLARK_CONSTRUCTOR));
     }
     return builder.build();
   }

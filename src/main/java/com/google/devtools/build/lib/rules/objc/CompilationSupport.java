@@ -69,6 +69,7 @@ import com.google.devtools.build.lib.rules.apple.AppleConfiguration;
 import com.google.devtools.build.lib.rules.apple.ApplePlatform;
 import com.google.devtools.build.lib.rules.apple.ApplePlatform.PlatformType;
 import com.google.devtools.build.lib.rules.apple.AppleToolchain;
+import com.google.devtools.build.lib.rules.apple.XcodeConfig;
 import com.google.devtools.build.lib.rules.cpp.CcToolchain;
 import com.google.devtools.build.lib.rules.cpp.CcToolchainProvider;
 import com.google.devtools.build.lib.rules.cpp.CppFileTypes;
@@ -264,21 +265,21 @@ public abstract class CompilationSupport {
 
   /** Returns a list of framework search path flags for clang actions. */
   static Iterable<String> commonFrameworkFlags(
-      ObjcProvider provider, AppleConfiguration appleConfiguration) {
-    return Interspersing.beforeEach("-F", commonFrameworkNames(provider, appleConfiguration));
+      ObjcProvider provider, RuleContext ruleContext, ApplePlatform applePlaform) {
+    return Interspersing.beforeEach("-F",
+        commonFrameworkNames(provider, ruleContext, applePlaform));
   }
 
   /** Returns a list of frameworks for clang actions. */
   static Iterable<String> commonFrameworkNames(
-      ObjcProvider provider, AppleConfiguration appleConfiguration) {
-    ApplePlatform platform = appleConfiguration.getSingleArchPlatform();
+      ObjcProvider provider, RuleContext ruleContext, ApplePlatform platform) {
 
     ImmutableList.Builder<String> frameworkNames =
         new ImmutableList.Builder<String>()
-            .add(AppleToolchain.sdkFrameworkDir(platform, appleConfiguration));
-    if (platform.getType() == PlatformType.IOS) {
-      // As of sdk8.1, XCTest is in a base Framework dir
-      frameworkNames.add(AppleToolchain.platformDeveloperFrameworkDir(appleConfiguration));
+            .add(AppleToolchain.sdkFrameworkDir(platform, ruleContext));
+    // As of sdk8.1, XCTest is in a base Framework dir.
+    if (platform.getType() != PlatformType.WATCHOS) { // WatchOS does not have this directory.
+      frameworkNames.add(AppleToolchain.platformDeveloperFrameworkDir(platform));
     }
     return frameworkNames
         // Add custom (non-SDK) framework search paths. For each framework foo/bar.framework,
@@ -1096,7 +1097,7 @@ public abstract class CompilationSupport {
       Artifact dummyArchive =
           Iterables.getOnlyElement(
               ruleContext
-                  .getPrerequisite("$dummy_lib", Mode.TARGET, ObjcProvider.class)
+                  .getPrerequisite("$dummy_lib", Mode.TARGET, ObjcProvider.SKYLARK_CONSTRUCTOR)
                   .get(LIBRARY));
 
       CustomCommandLine commandLine =
@@ -1413,12 +1414,11 @@ public abstract class CompilationSupport {
             .add("--platform")
             .add(appleConfiguration.getSingleArchPlatform().getLowerCaseNameInPlist())
             .add("--sdk_version")
-            .add(
-                appleConfiguration
-                    .getSdkVersionForPlatform(appleConfiguration.getSingleArchPlatform())
+            .add(XcodeConfig.getSdkVersionForPlatform(
+                ruleContext, appleConfiguration.getSingleArchPlatform())
                     .toStringWithMinimumComponents(2))
             .add("--xcode_version")
-            .add(appleConfiguration.getXcodeVersion().toStringWithMinimumComponents(2))
+            .add(XcodeConfig.getXcodeVersion(ruleContext).toStringWithMinimumComponents(2))
             .add("--");
     for (ObjcHeaderThinningInfo info : infos) {
       cmdLine.addJoinPaths(

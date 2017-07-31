@@ -15,8 +15,7 @@
 #ifndef BAZEL_SRC_MAIN_CPP_BLAZE_UTIL_PLATFORM_H_
 #define BAZEL_SRC_MAIN_CPP_BLAZE_UTIL_PLATFORM_H_
 
-#include <stdint.h>
-
+#include <cinttypes>
 #include <string>
 #include <vector>
 
@@ -198,6 +197,11 @@ std::string GetEnv(const std::string& name);
 void SetEnv(const std::string& name, const std::string& value);
 
 void UnsetEnv(const std::string& name);
+
+// Returns true and prints a warning if Bazel was started by clicking its icon.
+// This is typical on Windows. Other platforms should return false, unless they
+// wish to handle this case too.
+bool WarnIfStartedFromDesktop();
 
 // Ensure we have open file descriptors for stdin/stdout/stderr.
 void SetupStdStreams();

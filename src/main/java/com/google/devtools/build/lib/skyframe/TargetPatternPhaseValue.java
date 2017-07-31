@@ -107,12 +107,12 @@ public final class TargetPatternPhaseValue implements SkyValue {
 
   @SuppressWarnings("unused")
   private void writeObject(ObjectOutputStream out) {
-    throw new UnsupportedOperationException();
+    throw new NotSerializableRuntimeException();
   }
 
   @SuppressWarnings("unused")
   private void readObject(ObjectInputStream in) {
-    throw new UnsupportedOperationException();
+    throw new NotSerializableRuntimeException();
   }
 
   @SuppressWarnings("unused")
@@ -179,11 +179,6 @@ public final class TargetPatternPhaseValue implements SkyValue {
     @Override
     public SkyFunctionName functionName() {
       return SkyFunctions.TARGET_PATTERN_PHASE;
-    }
-
-    @Override
-    public Object argument() {
-      return this;
     }
 
     public ImmutableList<String> getTargetPatterns() {

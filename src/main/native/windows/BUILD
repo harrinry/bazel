@@ -1,5 +1,10 @@
 package(default_visibility = ["//visibility:private"])
 
+exports_files(
+    ["resources.o"],
+    visibility = ["//src/main/cpp:__pkg__"],
+)
+
 filegroup(
     name = "srcs",
     srcs = glob(["**"]),

@@ -16,6 +16,8 @@ package com.google.devtools.build.lib.remote;
 
 import com.google.devtools.build.lib.actions.ActionInput;
 import com.google.devtools.build.lib.actions.ActionInputFileCache;
+import com.google.devtools.build.lib.actions.EnvironmentalExecException;
+import com.google.devtools.build.lib.actions.ExecException;
 import com.google.devtools.build.lib.actions.cache.VirtualActionInput;
 import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadSafe;
 import com.google.devtools.build.lib.remote.Digests.ActionKey;
@@ -31,7 +33,6 @@ import com.google.devtools.remoteexecution.v1test.Digest;
 import com.google.devtools.remoteexecution.v1test.Directory;
 import com.google.devtools.remoteexecution.v1test.DirectoryNode;
 import com.google.devtools.remoteexecution.v1test.FileNode;
-import com.google.devtools.remoteexecution.v1test.OutputDirectory;
 import com.google.devtools.remoteexecution.v1test.OutputFile;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.InvalidProtocolBufferException;
@@ -79,7 +80,7 @@ public final class SimpleBlobStoreActionCache implements RemoteActionCache {
   }
 
   public void downloadTree(Digest rootDigest, Path rootLocation)
-      throws IOException, CacheNotFoundException, InterruptedException {
+      throws IOException, InterruptedException {
     Directory directory = Directory.parseFrom(downloadBlob(rootDigest));
     for (FileNode file : directory.getFilesList()) {
       downloadFileContents(
@@ -110,26 +111,47 @@ public final class SimpleBlobStoreActionCache implements RemoteActionCache {
 
   @Override
   public void download(ActionResult result, Path execRoot, FileOutErr outErr)
-      throws IOException, CacheNotFoundException, InterruptedException {
-    for (OutputFile file : result.getOutputFilesList()) {
-      if (!file.getContent().isEmpty()) {
-        createFile(
-            file.getContent().toByteArray(),
-            execRoot.getRelative(file.getPath()),
-            file.getIsExecutable());
-      } else {
-        downloadFileContents(
-            file.getDigest(), execRoot.getRelative(file.getPath()), file.getIsExecutable());
+      throws ExecException, IOException, InterruptedException {
+    try {
+      for (OutputFile file : result.getOutputFilesList()) {
+        if (!file.getContent().isEmpty()) {
+          createFile(
+              file.getContent().toByteArray(),
+              execRoot.getRelative(file.getPath()),
+              file.getIsExecutable());
+        } else {
+          downloadFileContents(
+              file.getDigest(), execRoot.getRelative(file.getPath()), file.getIsExecutable());
+        }
       }
+      if (!result.getOutputDirectoriesList().isEmpty()) {
+        throw new UnsupportedOperationException();
+      }
+      downloadOutErr(result, outErr);
+    } catch (IOException downloadException) {
+      try {
+        // Delete any (partially) downloaded output files, since any subsequent local execution
+        // of this action may expect none of the output files to exist.
+        for (OutputFile file : result.getOutputFilesList()) {
+          execRoot.getRelative(file.getPath()).delete();
+        }
+        outErr.getOutputPath().delete();
+        outErr.getErrorPath().delete();
+      } catch (IOException e) {
+        // If deleting of output files failed, we abort the build with a decent error message as
+        // any subsequent local execution failure would likely be incomprehensible.
+
+        // We don't propagate the downloadException, as this is a recoverable error and the cause
+        // of the build failure is really that we couldn't delete output files.
+        throw new EnvironmentalExecException("Failed to delete output files after incomplete "
+            + "download. Cannot continue with local execution.", e, true);
+      }
+      throw downloadException;
     }
-    for (OutputDirectory directory : result.getOutputDirectoriesList()) {
-      downloadTree(directory.getDigest(), execRoot.getRelative(directory.getPath()));
-    }
-    downloadOutErr(result, outErr);
   }
 
   private void downloadOutErr(ActionResult result, FileOutErr outErr)
-          throws IOException, CacheNotFoundException, InterruptedException {
+          throws IOException, InterruptedException {
     if (!result.getStdoutRaw().isEmpty()) {
       result.getStdoutRaw().writeTo(outErr.getOutputStream());
       outErr.getOutputStream().flush();
@@ -202,7 +224,7 @@ public final class SimpleBlobStoreActionCache implements RemoteActionCache {
   }
 
   private void downloadFileContents(Digest digest, Path dest, boolean executable)
-      throws IOException, CacheNotFoundException, InterruptedException {
+      throws IOException, InterruptedException {
     FileSystemUtils.createDirectoryAndParents(dest.getParentDirectory());
     try (OutputStream out = dest.getOutputStream()) {
       downloadBlob(digest, out);
@@ -248,7 +270,7 @@ public final class SimpleBlobStoreActionCache implements RemoteActionCache {
   }
 
   public void downloadBlob(Digest digest, OutputStream out)
-      throws IOException, CacheNotFoundException, InterruptedException {
+      throws IOException, InterruptedException {
     if (digest.getSizeBytes() == 0) {
       return;
     }
@@ -259,7 +281,7 @@ public final class SimpleBlobStoreActionCache implements RemoteActionCache {
   }
 
   public byte[] downloadBlob(Digest digest)
-      throws IOException, CacheNotFoundException, InterruptedException {
+      throws IOException, InterruptedException {
     if (digest.getSizeBytes() == 0) {
       return new byte[0];
     }

@@ -33,6 +33,7 @@ import com.google.devtools.build.lib.rules.RuleConfiguredTargetFactory;
 import com.google.devtools.build.lib.rules.apple.AppleConfiguration;
 import com.google.devtools.build.lib.rules.apple.ApplePlatform;
 import com.google.devtools.build.lib.rules.apple.ApplePlatform.PlatformType;
+import com.google.devtools.build.lib.rules.apple.XcodeConfig;
 import com.google.devtools.build.lib.rules.objc.CompilationSupport.ExtraLinkArgs;
 import com.google.devtools.build.lib.rules.objc.ObjcCommon.ResourceAttributes;
 import com.google.devtools.build.lib.rules.objc.ReleaseBundlingSupport.LinkedBinary;
@@ -156,7 +157,7 @@ abstract class BinaryLinkingTargetFactory implements RuleConfiguredTargetFactory
                 objcProvider,
                 LinkedBinary.LOCAL_AND_DEPENDENCIES,
                 ReleaseBundlingSupport.APP_BUNDLE_DIR_FORMAT,
-                appleConfiguration.getMinimumOsForPlatformType(PlatformType.IOS),
+                XcodeConfig.getMinimumOsForPlatformType(ruleContext, PlatformType.IOS),
                 appleConfiguration.getSingleArchPlatform());
         releaseBundlingSupport
             .registerActions(DsymOutputType.APP)
@@ -182,7 +183,7 @@ abstract class BinaryLinkingTargetFactory implements RuleConfiguredTargetFactory
 
     RuleConfiguredTargetBuilder targetBuilder =
         ObjcRuleClasses.ruleConfiguredTarget(ruleContext, filesToBuild.build())
-            .addProvider(ObjcProvider.class, objcProvider)
+            .addNativeDeclaredProvider(objcProvider)
             .addNativeDeclaredProvider(objcProvider)
             .addProvider(
                 InstrumentedFilesProvider.class,
@@ -192,7 +193,7 @@ abstract class BinaryLinkingTargetFactory implements RuleConfiguredTargetFactory
     if (xcTestAppProvider.isPresent()) {
       // TODO(bazel-team): Stop exporting an XcTestAppProvider once objc_binary no longer creates an
       // application bundle.
-      targetBuilder.addProvider(XcTestAppProvider.class, xcTestAppProvider.get());
+      targetBuilder.addNativeDeclaredProvider(xcTestAppProvider.get());
     }
     if (maybeRunfilesSupport.isPresent()) {
       RunfilesSupport runfilesSupport = maybeRunfilesSupport.get();
@@ -229,7 +230,7 @@ abstract class BinaryLinkingTargetFactory implements RuleConfiguredTargetFactory
             .addDepObjcProviders(protosObjcProvider.asSet())
             .addNonPropagatedDepObjcProviders(
                 ruleContext.getPrerequisites(
-                    "non_propagated_deps", Mode.TARGET, ObjcProvider.class))
+                    "non_propagated_deps", Mode.TARGET, ObjcProvider.SKYLARK_CONSTRUCTOR))
             .setIntermediateArtifacts(intermediateArtifacts)
             .setAlwayslink(false)
             .setHasModuleMap()

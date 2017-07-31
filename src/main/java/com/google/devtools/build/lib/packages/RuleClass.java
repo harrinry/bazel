@@ -57,6 +57,7 @@ import com.google.devtools.build.lib.vfs.PathFragment;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -422,10 +423,6 @@ public class RuleClass {
         this.ruleClasses = ImmutableSet.copyOf(ruleClasses);
       }
 
-      public RuleClassNamePredicate() {
-        this(ImmutableSet.<String>of());
-      }
-
       @Override
       public boolean apply(RuleClass ruleClass) {
         return ruleClasses.contains(ruleClass.getName());
@@ -440,6 +437,13 @@ public class RuleClass {
       public boolean equals(Object o) {
         return (o instanceof RuleClassNamePredicate)
             && ruleClasses.equals(((RuleClassNamePredicate) o).ruleClasses);
+      }
+
+      /**
+       * Returns true if this and the other predicate have common rule class entries.
+       */
+      public boolean intersects(RuleClassNamePredicate other) {
+        return !Collections.disjoint(ruleClasses, other.ruleClasses);
       }
 
       @Override
@@ -491,6 +495,7 @@ public class RuleClass {
     private ImplicitOutputsFunction implicitOutputsFunction = ImplicitOutputsFunction.NONE;
     private Configurator<?, ?> configurator = NO_CHANGE;
     private RuleTransitionFactory transitionFactory;
+    private RuleTransitionFactory outgoingTransitionFactory;
     private ConfiguredTargetFactory<?, ?> configuredTargetFactory = null;
     private PredicateWithMessage<Rule> validityPredicate =
         PredicatesWithMessage.<Rule>alwaysTrue();
@@ -515,7 +520,7 @@ public class RuleClass {
      * Constructs a new {@code RuleClassBuilder} using all attributes from all
      * parent rule classes. An attribute cannot exist in more than one parent.
      *
-     * <p>The rule type affects the the allowed names and the required
+     * <p>The rule type affects the allowed names and the required
      * attributes (see {@link RuleClassType}).
      *
      * @throws IllegalArgumentException if an attribute with the same name exists
@@ -609,6 +614,7 @@ public class RuleClass {
           isConfigMatcher,
           configurator,
           transitionFactory,
+          outgoingTransitionFactory,
           configuredTargetFactory,
           validityPredicate,
           preferredDependencyPredicate,
@@ -752,11 +758,13 @@ public class RuleClass {
     }
 
     /**
-     * Applies the given transition to all incoming edges for this rule class.  Does not work with
-     * static configurations.
+     * Applies the given transition to all incoming edges for this rule class.
      *
-     * <p>Note that the given transition must be a PatchTransition instance.  We use the more
-     * general Transtion here because PatchTransition is not available in this package.
+     * <p>The given transition must be a PatchTransition.  We use the more general Transition
+     * here because PatchTransition is not available in this package.
+     *
+     * <p>If you need the transition to depend on the rule it's being applied to, use
+     * {@link #cfg(RuleTransitionFactory)}.
      */
     public Builder cfg(Transition transition) {
       Preconditions.checkState(type != RuleClassType.ABSTRACT,
@@ -768,6 +776,12 @@ public class RuleClass {
       return this;
     }
 
+    /**
+     * Applies the given transition factory to all incoming edges for this rule class.
+     *
+     * <p>Unlike{@link #cfg(Transition)}, the factory can examine the rule when deciding what
+     * transition to use.
+     */
     public Builder cfg(RuleTransitionFactory transitionFactory) {
       Preconditions.checkState(type != RuleClassType.ABSTRACT,
           "Setting not inherited property (cfg) of abstract rule class '%s'", name);
@@ -775,6 +789,22 @@ public class RuleClass {
           "Property cfg has already been set");
       Preconditions.checkNotNull(transitionFactory);
       this.transitionFactory = transitionFactory;
+      return this;
+    }
+
+    /**
+     * Applies the given transition factory to all deps of this rule class.
+     *
+     * <p>This means that for each dep, the factory can examine the dep's {@link Rule} to
+     * determine the right transition for that dep.
+     */
+    public Builder depsCfg(RuleTransitionFactory outgoingTransitionFactory) {
+      Preconditions.checkState(type != RuleClassType.ABSTRACT,
+          "Setting not inherited property (configureDeps) of abstract rule class '%s'", name);
+      Preconditions.checkState(this.outgoingTransitionFactory == null,
+          "Property configureDeps has already been set");
+      Preconditions.checkNotNull(outgoingTransitionFactory);
+      this.outgoingTransitionFactory = outgoingTransitionFactory;
       return this;
     }
 
@@ -1073,6 +1103,11 @@ public class RuleClass {
   private final RuleTransitionFactory transitionFactory;
 
   /**
+   * A factory which will produce custom configuration transitions for each dep of this rule.
+   */
+  private final RuleTransitionFactory outgoingTransitionFactory;
+
+  /**
    * The factory that creates configured targets from this rule.
    */
   private final ConfiguredTargetFactory<?, ?> configuredTargetFactory;
@@ -1163,6 +1198,7 @@ public class RuleClass {
       boolean isConfigMatcher,
       Configurator<?, ?> configurator,
       RuleTransitionFactory transitionFactory,
+      RuleTransitionFactory outgoingRuleTransitionFactory,
       ConfiguredTargetFactory<?, ?> configuredTargetFactory,
       PredicateWithMessage<Rule> validityPredicate,
       Predicate<String> preferredDependencyPredicate,
@@ -1188,6 +1224,7 @@ public class RuleClass {
     this.isConfigMatcher = isConfigMatcher;
     this.configurator = Preconditions.checkNotNull(configurator);
     this.transitionFactory = transitionFactory;
+    this.outgoingTransitionFactory = outgoingRuleTransitionFactory;
     this.configuredTargetFactory = configuredTargetFactory;
     this.validityPredicate = validityPredicate;
     this.preferredDependencyPredicate = preferredDependencyPredicate;
@@ -1261,6 +1298,10 @@ public class RuleClass {
 
   public RuleTransitionFactory getTransitionFactory() {
     return transitionFactory;
+  }
+
+  public RuleTransitionFactory getOutgoingTransitionFactory() {
+    return outgoingTransitionFactory;
   }
 
   @SuppressWarnings("unchecked")

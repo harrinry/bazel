@@ -684,9 +684,9 @@ void ExecuteDaemon(const string& exe, const std::vector<string>& args_vector,
 #endif  // not COMPILER_MSVC
 
   wstring wdaemon_output;
-  if (!blaze_util::AsWindowsPathWithUncPrefix(daemon_output, &wdaemon_output)) {
+  if (!blaze_util::AsAbsoluteWindowsPath(daemon_output, &wdaemon_output)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "ExecuteDaemon(%s): AsWindowsPathWithUncPrefix(%s)", exe.c_str(),
+         "ExecuteDaemon(%s): AsAbsoluteWindowsPath(%s)", exe.c_str(),
          daemon_output.c_str());
   }
 
@@ -932,12 +932,14 @@ string ConvertPath(const string& path) {
 #ifdef COMPILER_MSVC
   // The path may not be Windows-style and may not be normalized, so convert it.
   wstring wpath;
-  if (!blaze_util::AsWindowsPathWithUncPrefix(path, &wpath)) {
-    pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR, "ConvertPath(%s)",
-         path.c_str());
+  if (!blaze_util::AsAbsoluteWindowsPath(path, &wpath)) {
+    pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
+         "ConvertPath(%s): AsAbsoluteWindowsPath", path.c_str());
   }
   std::transform(wpath.begin(), wpath.end(), wpath.begin(), ::towlower);
-  return string(blaze_util::WstringToCstring(wpath.c_str()).get());
+  return string(blaze_util::WstringToCstring(
+                    blaze_util::RemoveUncPrefixMaybe(wpath.c_str()))
+                    .get());
 #else  // not COMPILER_MSVC
   // If the path looks like %USERPROFILE%/foo/bar, don't convert.
   if (path.empty() || path[0] == '%') {
@@ -977,15 +979,15 @@ string ConvertPathList(const string& path_list) {
 bool SymlinkDirectories(const string &posix_target, const string &posix_name) {
   wstring name;
   wstring target;
-  if (!blaze_util::AsWindowsPathWithUncPrefix(posix_name, &name)) {
+  if (!blaze_util::AsAbsoluteWindowsPath(posix_name, &name)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "SymlinkDirectories(%s, %s): AsWindowsPathWithUncPrefix(%s)",
+         "SymlinkDirectories(%s, %s): AsAbsoluteWindowsPath(%s)",
          posix_target.c_str(), posix_name.c_str(), posix_target.c_str());
     return false;
   }
-  if (!blaze_util::AsWindowsPathWithUncPrefix(posix_target, &target)) {
+  if (!blaze_util::AsAbsoluteWindowsPath(posix_target, &target)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "SymlinkDirectories(%s, %s): AsWindowsPathWithUncPrefix(%s)",
+         "SymlinkDirectories(%s, %s): AsAbsoluteWindowsPath(%s)",
          posix_target.c_str(), posix_name.c_str(), posix_name.c_str());
     return false;
   }
@@ -1164,6 +1166,25 @@ void SetEnv(const string& name, const string& value) {
 
 void UnsetEnv(const string& name) { SetEnv(name, ""); }
 
+bool WarnIfStartedFromDesktop() {
+  // GetConsoleProcessList returns:
+  //   0, if no console attached (Bazel runs as a subprocess)
+  //   1, if Bazel was started by clicking on its icon
+  //   2, if Bazel was started from the command line (even if its output is
+  //      redirected)
+  DWORD dummy[2] = {0};
+  if (GetConsoleProcessList(dummy, 2) != 1) {
+    return false;
+  }
+  printf(
+      "Bazel is a command line tool.\n\n"
+      "Try opening a console, such as the Windows Command Prompt (cmd.exe) "
+      "or PowerShell, and running \"bazel help\".\n\n"
+      "Press Enter to close this window...");
+  ReadFile(GetStdHandle(STD_INPUT_HANDLE), dummy, 1, dummy, NULL);
+  return true;
+}
+
 #ifndef ENABLE_PROCESSED_OUTPUT
 // From MSDN about BOOL SetConsoleMode(HANDLE, DWORD).
 #define ENABLE_PROCESSED_OUTPUT 0x0001
@@ -1277,9 +1298,9 @@ uint64_t AcquireLock(const string& output_base, bool batch_mode, bool block,
                      BlazeLock* blaze_lock) {
   string lockfile = blaze_util::JoinPath(output_base, "lock");
   wstring wlockfile;
-  if (!blaze_util::AsWindowsPathWithUncPrefix(lockfile, &wlockfile)) {
+  if (!blaze_util::AsAbsoluteWindowsPath(lockfile, &wlockfile)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "AcquireLock(%s): AsWindowsPathWithUncPrefix(%s)", output_base.c_str(),
+         "AcquireLock(%s): AsAbsoluteWindowsPath(%s)", output_base.c_str(),
          lockfile.c_str());
   }
 

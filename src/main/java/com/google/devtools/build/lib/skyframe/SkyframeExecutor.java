@@ -41,6 +41,7 @@ import com.google.devtools.build.lib.actions.ActionExecutionContextFactory;
 import com.google.devtools.build.lib.actions.ActionExecutionStatusReporter;
 import com.google.devtools.build.lib.actions.ActionGraph;
 import com.google.devtools.build.lib.actions.ActionInputFileCache;
+import com.google.devtools.build.lib.actions.ActionInputPrefetcher;
 import com.google.devtools.build.lib.actions.ActionLogBufferPathGenerator;
 import com.google.devtools.build.lib.actions.ActionLookupValue;
 import com.google.devtools.build.lib.actions.Artifact;
@@ -127,6 +128,7 @@ import com.google.devtools.build.lib.util.ResourceUsage;
 import com.google.devtools.build.lib.util.io.TimestampGranularityMonitor;
 import com.google.devtools.build.lib.vfs.BatchStat;
 import com.google.devtools.build.lib.vfs.Dirent;
+import com.google.devtools.build.lib.vfs.FileSystem;
 import com.google.devtools.build.lib.vfs.ModifiedFileSet;
 import com.google.devtools.build.lib.vfs.Path;
 import com.google.devtools.build.lib.vfs.PathFragment;
@@ -522,8 +524,9 @@ public abstract class SkyframeExecutor implements WalkableGraphFactory {
     Preconditions.checkState(active);
   }
 
-  public void setFileCache(ActionInputFileCache fileCache) {
-    this.skyframeActionExecutor.setFileCache(fileCache);
+  public void configureActionExecutor(
+      ActionInputFileCache fileCache, ActionInputPrefetcher actionInputPrefetcher) {
+    this.skyframeActionExecutor.configure(fileCache, actionInputPrefetcher);
   }
 
   public void dump(boolean summarize, PrintStream out) {
@@ -1539,10 +1542,8 @@ public abstract class SkyframeExecutor implements WalkableGraphFactory {
    * targets and their transitive dependencies.
    */
   private static boolean useUntrimmedDynamicConfigs(BuildOptions options) {
-    BuildConfiguration.Options.DynamicConfigsMode mode =
-        options.get(BuildConfiguration.Options.class).useDynamicConfigurations;
-    return mode == BuildConfiguration.Options.DynamicConfigsMode.NOTRIM
-        || mode == BuildConfiguration.Options.DynamicConfigsMode.NOTRIM_PARTIAL;
+    return options.get(BuildConfiguration.Options.class).useDynamicConfigurations
+        == BuildConfiguration.Options.DynamicConfigsMode.NOTRIM;
   }
 
   /**
@@ -1885,6 +1886,21 @@ public abstract class SkyframeExecutor implements WalkableGraphFactory {
   @VisibleForTesting
   public MemoizingEvaluator getEvaluatorForTesting() {
     return memoizingEvaluator;
+  }
+
+  @VisibleForTesting
+  public FileSystem getFileSystemForTesting() {
+    return directories.getFileSystem();
+  }
+
+  @VisibleForTesting
+  public RuleClassProvider getRuleClassProviderForTesting() {
+    return ruleClassProvider;
+  }
+
+  @VisibleForTesting
+  public Package.Builder.Helper getPackageBuilderHelperForTesting() {
+    return pkgFactory.getPackageBuilderHelperForTesting();
   }
 
   public void sync(

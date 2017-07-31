@@ -279,17 +279,6 @@ public class CppOptions extends FragmentOptions {
   )
   public boolean skipStaticOutputs;
 
-  // TODO(djasper): Remove once it has been removed from the global blazerc.
-  @Option(
-    name = "send_transitive_header_module_srcs",
-    defaultValue = "true",
-    category = "semantics",
-    documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-    effectTags = {OptionEffectTag.UNKNOWN},
-    help = "Obsolete. Don't use."
-  )
-  public boolean sendTransitiveHeaderModuleSrcs;
-
   @Option(
     name = "process_headers_in_dependencies",
     defaultValue = "false",
@@ -758,26 +747,6 @@ public class CppOptions extends FragmentOptions {
   public boolean inmemoryDotdFiles;
 
   @Option(
-    name = "experimental_skip_unused_modules",
-    defaultValue = "false",
-    category = "experimental",
-    documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-    effectTags = {OptionEffectTag.UNKNOWN},
-    help = "Deprecated. No effect."
-  )
-  public boolean skipUnusedModules;
-
-  @Option(
-    name = "experimental_prune_more_modules",
-    defaultValue = "false",
-    category = "experimental",
-    documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-    effectTags = {OptionEffectTag.UNKNOWN},
-    help = "Deprecated. No effect."
-  )
-  public boolean pruneMoreModules;
-
-  @Option(
     name = "prune_cpp_modules",
     defaultValue = "true",
     category = "strategy",
@@ -948,15 +917,6 @@ public class CppOptions extends FragmentOptions {
    */
   public boolean isLipoContextCollector() {
     return lipoConfigurationState == LipoConfigurationState.LIPO_CONTEXT_COLLECTOR;
-  }
-
-  /**
-   * FDO/LIPO is not yet compatible with dynamic configurations.
-   **/
-  @Override
-  public boolean useStaticConfigurationsOverride() {
-    // --lipo=binary is technically possible without FDO, even though it doesn't do anything.
-    return isFdo() || lipoModeForBuild == LipoMode.BINARY;
   }
 
   @Override

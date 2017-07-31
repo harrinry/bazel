@@ -56,7 +56,7 @@ public class MultiArchBinarySupport {
     // this attribute. b/28403953 tracks cc toolchain usage.
     ImmutableListMultimap<BuildConfiguration, CcToolchainProvider> configToProvider =
         ruleContext.getPrerequisitesByConfiguration(
-            ObjcRuleClasses.CHILD_CONFIG_ATTR, Mode.SPLIT, CcToolchainProvider.class);
+            ObjcRuleClasses.CHILD_CONFIG_ATTR, Mode.SPLIT, CcToolchainProvider.SKYLARK_CONSTRUCTOR);
 
     ImmutableMap.Builder<BuildConfiguration, CcToolchainProvider> result = ImmutableMap.builder();
     for (BuildConfiguration config : configToProvider.keySet()) {
@@ -258,7 +258,8 @@ public class MultiArchBinarySupport {
       Iterable<ObjcProvider> additionalDepProviders =
           Iterables.concat(
               dylibObjcProviders,
-              ruleContext.getPrerequisites("bundles", Mode.TARGET, ObjcProvider.class),
+              ruleContext.getPrerequisites("bundles", Mode.TARGET,
+                  ObjcProvider.SKYLARK_CONSTRUCTOR),
               protosObjcProvider.asSet());
 
       ObjcCommon common =

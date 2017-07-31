@@ -902,6 +902,17 @@ public final class RuleContext extends TargetContext
   }
 
   /**
+   * Returns all the providers of the specified type that are listed under the specified attribute
+   * of this target in the BUILD file, and that contain the specified provider.
+   */
+  public <C extends SkylarkClassObject>
+  Iterable<? extends TransitiveInfoCollection> getPrerequisitesIf(
+      String attributeName, Mode mode, final NativeClassObjectConstructor<C> classType) {
+    return AnalysisUtils.filterByProvider(getPrerequisites(attributeName, mode), classType);
+  }
+
+
+  /**
    * Returns the prerequisite referred to by the specified attribute. Also checks whether
    * the attribute is marked as executable and that the target referred to can actually be
    * executed.
@@ -2043,7 +2054,7 @@ public final class RuleContext extends TargetContext
 
     /**
      * Because some rules still have to use allowedRuleClasses to do rule dependency validation.
-     * A dependency is valid if it is from a rule in allowedRuledClasses, OR if all of the providers
+     * A dependency is valid if it is from a rule in allowedRuleClasses, OR if all of the providers
      * in mandatoryNativeProviders AND mandatoryProvidersList are provided by the target.
      */
     private void validateRuleDependency(ConfiguredTarget prerequisite, Attribute attribute) {
@@ -2066,17 +2077,17 @@ public final class RuleContext extends TargetContext
                 false);
       }
 
-      if (attribute.getAllowedRuleClassesWarningPredicate() != Predicates.<RuleClass>alwaysTrue()) {
-        Predicate<RuleClass> warningPredicate = attribute.getAllowedRuleClassesWarningPredicate();
-        if (warningPredicate.apply(ruleClass)) {
-          reportBadPrerequisite(attribute, prerequisiteTarget.getTargetKind(), prerequisite,
-              "expected " + attribute.getAllowedRuleClassesPredicate(), true);
-          // prerequisite has a rule class allowed with a warning => accept, emitting a warning.
-          return;
-        }
+      if (attribute.getAllowedRuleClassesWarningPredicate().apply(ruleClass)) {
+        Predicate<RuleClass> allowedRuleClasses = attribute.getAllowedRuleClassesPredicate();
+        reportBadPrerequisite(attribute, prerequisiteTarget.getTargetKind(), prerequisite,
+            allowedRuleClasses == Predicates.<RuleClass>alwaysTrue()
+                ? null : "expected " + allowedRuleClasses,
+            true);
+        // prerequisite has a rule class allowed with a warning => accept, emitting a warning.
+        return;
       }
 
-      // If we got there, we have no allowed rule class.
+      // If we get here, we have no allowed rule class.
       // If mandatory providers are specified, try them.
       Set<String> unfulfilledRequirements = new LinkedHashSet<>();
       if (!attribute.getMandatoryNativeProvidersList().isEmpty()
@@ -2094,7 +2105,7 @@ public final class RuleContext extends TargetContext
         String missingProviders = getMissingMandatoryProviders(prerequisite, attribute);
         if (missingProviders != null) {
           unfulfilledRequirements.add(
-              "'" + prerequisite.getLabel() + "' does not have mandatory provider "
+              "'" + prerequisite.getLabel() + "' does not have mandatory providers: "
                   + missingProviders);
           hadAllMandatoryProviders = false;
         }

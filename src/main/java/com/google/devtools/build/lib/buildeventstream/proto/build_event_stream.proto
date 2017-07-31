@@ -65,6 +65,13 @@ message BuildEventId {
   message OptionsParsedId {
   }
 
+  // Identifier of an event reporting that an external resource was fetched
+  // from.
+  message FetchId {
+    // The external resource that was fetched from.
+    string url = 1;
+  }
+
   // Identifier of an event indicating that a target pattern has been expanded
   // further.
   // Messages of this shape are also used to describe parts of a pattern that
@@ -115,6 +122,10 @@ message BuildEventId {
   // this includes all failed actions).
   message ActionCompletedId {
     string primary_output = 1;
+    // Optional, the label of the owner of the action, for reference.
+    string label = 2;
+    // Optional, the id of the configuration of the action owner.
+    ConfigurationId configuration = 3;
   }
 
   // Identifier of an event reporting on an individual test run. The label
@@ -147,6 +158,7 @@ message BuildEventId {
     CommandLineId command_line = 11;
     WorkspaceStatusId workspace_status = 14;
     OptionsParsedId options_parsed = 12;
+    FetchId fetch = 17;
     ConfigurationId configuration = 15;
     TargetConfiguredId target_configured = 16;
     PatternExpandedId pattern = 4;
@@ -192,25 +204,21 @@ message Aborted {
     // Failure due to reasons entirely internal to the build tool, e.g.,
     // running out of memory.
     INTERNAL = 4;
+
+    // A Failure occurred in the loading phase of a target.
+    LOADING_FAILURE = 5;
+
+    // A Failure occurred in the analysis phase of a target.
+    ANALYSIS_FAILURE = 6;
+
+    // Target build was skipped (e.g. due to incompatible CPU constraints).
+    SKIPPED = 7;
   }
   AbortReason reason = 1;
 
   // A human readable description with more details about there reason, where
   // available and useful.
   string description = 2;
-}
-
-// Payload of an event indicating that an expected event will not come, as
-// something went wrong when attempting to load the corresponding package.
-message LoadingFailure {
-  string details = 1;
-}
-
-// Payload of an event indicating that an expected event will not come, as
-// something went wrong during analysis. If the analysis of a target failed,
-// the id of the event will be the corresponding TargetCompletedId.
-message AnalysisFailure {
-  string details = 1;
 }
 
 // Payload of an event indicating the beginning of a new build. Usually, events
@@ -259,6 +267,13 @@ message OptionsParsed {
   repeated string cmd_line = 3;
   repeated string explicit_cmd_line = 4;
   blaze.invocation_policy.InvocationPolicy invocation_policy = 5;
+}
+
+// Payload of an event indicating that an external resource was fetched. This
+// event will only occur in streams where an actual fetch happened, not in ones
+// where a cached copy of the entity to be fetched was used.
+message Fetch {
+  bool success = 1;
 }
 
 // Payload of an event reporting the workspace status. Key-value pairs can be
@@ -336,11 +351,11 @@ message ActionExecuted {
   // (e.g., a file path).
   File stderr = 4;
 
-  // Optionally, the label of the owner of the action, for reference.
-  string label = 5;
+  // Deprecated. This field is now present on ActionCompletedId.
+  string label = 5 [deprecated = true];
 
-  // Optinally, the id of the configuration of the action owner.
-  BuildEventId.ConfigurationId configuration = 7;
+  // Deprecated. This field is now present on ActionCompletedId.
+  BuildEventId.ConfigurationId configuration = 7 [deprecated = true];
 
   // Primary output; only provided for successful actions.
   File primary_output = 6;
@@ -487,18 +502,18 @@ message BuildFinished {
 // that is observed, is provided in the payload. More options for the payload
 // might be added in the future.
 message BuildEvent {
+  reserved 11, 19;
   BuildEventId id = 1;
   repeated BuildEventId children = 2;
   bool last_message = 20;
   oneof payload {
     Progress progress = 3;
     Aborted aborted = 4;
-    LoadingFailure loading_failed = 11;
-    AnalysisFailure analysis_failed = 19;
     BuildStarted started = 5;
     CommandLine command_line = 12;
     OptionsParsed options_parsed = 13;
     WorkspaceStatus workspace_status = 16;
+    Fetch fetch = 21;
     Configuration configuration = 17;
     PatternExpanded expanded = 6;
     TargetConfigured configured = 18;

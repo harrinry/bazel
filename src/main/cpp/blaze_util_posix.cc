@@ -15,7 +15,6 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <inttypes.h>
 #include <limits.h>  // PATH_MAX
 #include <poll.h>
 #include <pwd.h>
@@ -32,6 +31,7 @@
 #include <unistd.h>
 
 #include <cassert>
+#include <cinttypes>
 
 #include "src/main/cpp/blaze_util.h"
 #include "src/main/cpp/blaze_util_platform.h"
@@ -511,6 +511,8 @@ void SetEnv(const string& name, const string& value) {
 void UnsetEnv(const string& name) {
   unsetenv(name.c_str());
 }
+
+bool WarnIfStartedFromDesktop() { return false; }
 
 void SetupStdStreams() {
   // Set non-buffered output mode for stderr/stdout. The server already

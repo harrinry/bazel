@@ -43,7 +43,7 @@ using bazel::windows::OpenDirectory;
 // The result may have a UNC prefix.
 static unique_ptr<WCHAR[]> GetCwdW();
 
-static bool IsDevNull(const string& path);
+static char GetCurrentDrive();
 
 // Returns true if `path` refers to a directory or (non-dangling) junction.
 // `path` must be a normalized Windows path, with UNC prefix (and absolute) if
@@ -110,7 +110,7 @@ static void AddUncPrefixMaybe(wstring* path, size_t max_path = MAX_PATH) {
   }
 }
 
-static const wchar_t* RemoveUncPrefixMaybe(const wchar_t* ptr) {
+const wchar_t* RemoveUncPrefixMaybe(const wchar_t* ptr) {
   return ptr + (HasUncPrefix(ptr) ? 4 : 0);
 }
 
@@ -177,15 +177,14 @@ bool WindowsFileMtime::GetIfInDistantFuture(const string& path, bool* result) {
   if (path.empty()) {
     return false;
   }
-  if (IsDevNull(path)) {
+  if (IsDevNull(path.c_str())) {
     *result = false;
     return true;
   }
   wstring wpath;
-  if (!AsWindowsPathWithUncPrefix(path, &wpath)) {
+  if (!AsAbsoluteWindowsPath(path, &wpath)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "WindowsFileMtime::GetIfInDistantFuture(%s): "
-         "AsWindowsPathWithUncPrefix",
+         "WindowsFileMtime::GetIfInDistantFuture(%s): AsAbsoluteWindowsPath",
          path.c_str());
   }
 
@@ -235,9 +234,9 @@ bool WindowsFileMtime::Set(const string& path, const FILETIME& time) {
     return false;
   }
   wstring wpath;
-  if (!AsWindowsPathWithUncPrefix(path, &wpath)) {
+  if (!AsAbsoluteWindowsPath(path, &wpath)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "WindowsFileMtime::Set(%s): AsWindowsPathWithUncPrefix", path.c_str());
+         "WindowsFileMtime::Set(%s): AsAbsoluteWindowsPath", path.c_str());
     return false;
   }
 
@@ -444,23 +443,41 @@ void MsysRoot::InitIfNecessary() {
 //
 // The `path` may be absolute or relative, and may be a Windows or MSYS path.
 // In every case, the output is normalized (see NormalizeWindowsPath).
-// The output won't have a UNC prefix, even if `path` did.
 //
-// Recognizes the drive letter in MSYS paths, so e.g. "/c/windows" becomes
-// "c:\windows". Prepends the MSYS root (computed from the BAZEL_SH envvar) to
-// absolute MSYS paths, so e.g. "/usr" becomes "c:\tools\msys64\usr".
+// If `path` had a "\\?\" prefix then the function assumes it's already Windows
+// style and converts it to wstring without any alterations.
+// Otherwise `path` is normalized and converted to a Windows path and the result
+// won't have a "\\?\" prefix even if it's longer than MAX_PATH (adding the
+// prefix is the caller's responsibility).
 //
-// The result may be longer than MAX_PATH. It's the caller's responsibility to
-// prepend the UNC prefix in case they need to pass it to a WinAPI function
-// (some require the prefix, some don't), or to quote the path if necessary.
+// The function recognizes the drive letter in MSYS paths, so e.g. "/c/windows"
+// becomes "c:\windows". Prepends the MSYS root (computed from the BAZEL_SH
+// envvar) to absolute MSYS paths, so e.g. "/usr" becomes "c:\tools\msys64\usr".
+// Recognizes current-drive-relative Windows paths ("\foo") turning them into
+// absolute paths ("c:\foo").
 bool AsWindowsPath(const string& path, wstring* result) {
   if (path.empty()) {
     result->clear();
     return true;
   }
-  if (IsDevNull(path)) {
+  if (IsDevNull(path.c_str())) {
     result->assign(L"NUL");
     return true;
+  }
+  if (HasUncPrefix(path.c_str())) {
+    // Path has "\\?\" prefix --> assume it's already Windows-style.
+    *result = CstringToWstring(path.c_str()).get();
+    return true;
+  }
+  if (IsPathSeparator(path[0]) && path.size() > 1 && IsPathSeparator(path[1])) {
+    // Unsupported path: "\\" or "\\server\path", or some degenerate form of
+    // these, such as "//foo".
+    return false;
+  }
+  if (HasDriveSpecifierPrefix(path.c_str()) &&
+      (path.size() < 3 || !IsPathSeparator(path[2]))) {
+    // Unsupported path: "c:" or "c:foo"
+    return false;
   }
 
   string mutable_path = path;
@@ -485,6 +502,9 @@ bool AsWindowsPath(const string& path, wstring* result) {
       }
       mutable_path = JoinPath(MsysRoot::GetPath(), path);
     }
+  } else if (path[0] == '\\') {
+    // This is an absolute Windows path on the current drive, e.g. "\foo\bar".
+    mutable_path = string(1, GetCurrentDrive()) + ":" + path;
   }  // otherwise this is a relative path, or absolute Windows path.
 
   result->assign(
@@ -492,25 +512,29 @@ bool AsWindowsPath(const string& path, wstring* result) {
   return true;
 }
 
-bool AsWindowsPathWithUncPrefix(const string& path, wstring* wpath,
-                                size_t max_path) {
-  if (IsDevNull(path)) {
-    wpath->assign(L"NUL");
+bool AsAbsoluteWindowsPath(const string& path, wstring* result) {
+  if (path.empty()) {
+    result->clear();
     return true;
   }
-
-  if (!AsWindowsPath(path, wpath)) {
+  if (IsDevNull(path.c_str())) {
+    result->assign(L"NUL");
+    return true;
+  }
+  if (!AsWindowsPath(path, result)) {
     return false;
   }
-  if (!IsAbsolute(path)) {
-    wpath->assign(wstring(GetCwdW().get()) + L"\\" + *wpath);
+  if (!IsRootOrAbsolute(*result, /* must_be_root */ false)) {
+    *result = wstring(GetCwdW().get()) + L"\\" + *result;
   }
-  AddUncPrefixMaybe(wpath, max_path);
+  if (!HasUncPrefix(result->c_str())) {
+    *result = wstring(L"\\\\?\\") + *result;
+  }
   return true;
 }
 
 bool AsShortWindowsPath(const string& path, string* result) {
-  if (IsDevNull(path)) {
+  if (IsDevNull(path.c_str())) {
     result->assign("NUL");
     return true;
   }
@@ -518,9 +542,9 @@ bool AsShortWindowsPath(const string& path, string* result) {
   result->clear();
   wstring wpath;
   wstring wsuffix;
-  if (!AsWindowsPathWithUncPrefix(path, &wpath)) {
+  if (!AsAbsoluteWindowsPath(path, &wpath)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "AsShortWindowsPath(%s): AsWindowsPathWithUncPrefix", path.c_str());
+         "AsShortWindowsPath(%s): AsAbsoluteWindowsPath", path.c_str());
     return false;
   }
   DWORD size = ::GetShortPathNameW(wpath.c_str(), nullptr, 0);
@@ -578,14 +602,13 @@ static bool OpenFileForReading(const string& filename, HANDLE* result) {
     return false;
   }
   // TODO(laszlocsomor): remove the following check; it won't allow opening NUL.
-  if (IsDevNull(filename)) {
+  if (IsDevNull(filename.c_str())) {
     return true;
   }
   wstring wfilename;
-  if (!AsWindowsPathWithUncPrefix(filename, &wfilename)) {
+  if (!AsAbsoluteWindowsPath(filename, &wfilename)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "OpenFileForReading(%s): AsWindowsPathWithUncPrefix",
-         filename.c_str());
+         "OpenFileForReading(%s): AsAbsoluteWindowsPath", filename.c_str());
   }
   *result = ::CreateFileW(
       /* lpFileName */ wfilename.c_str(),
@@ -611,7 +634,7 @@ int ReadFromHandle(file_handle_type handle, void* data, size_t size,
 }
 
 bool ReadFile(const string& filename, string* content, int max_size) {
-  if (IsDevNull(filename)) {
+  if (IsDevNull(filename.c_str())) {
     // mimic read(2) behavior: we can always read 0 bytes from /dev/null
     content->clear();
     return true;
@@ -630,7 +653,7 @@ bool ReadFile(const string& filename, string* content, int max_size) {
 }
 
 bool ReadFile(const string& filename, void* data, size_t size) {
-  if (IsDevNull(filename)) {
+  if (IsDevNull(filename.c_str())) {
     // mimic read(2) behavior: we can always read 0 bytes from /dev/null
     return true;
   }
@@ -648,13 +671,13 @@ bool ReadFile(const string& filename, void* data, size_t size) {
 
 bool WriteFile(const void* data, size_t size, const string& filename,
                unsigned int perm) {
-  if (IsDevNull(filename)) {
+  if (IsDevNull(filename.c_str())) {
     return true;  // mimic write(2) behavior with /dev/null
   }
   wstring wpath;
-  if (!AsWindowsPathWithUncPrefix(filename, &wpath)) {
+  if (!AsAbsoluteWindowsPath(filename, &wpath)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "WriteFile(%s): AsWindowsPathWithUncPrefix", filename.c_str());
+         "WriteFile(%s): AsAbsoluteWindowsPath", filename.c_str());
     return false;
   }
 
@@ -694,18 +717,18 @@ int WriteToStdOutErr(const void* data, size_t size, bool to_stdout) {
 
 int RenameDirectory(const std::string& old_name, const std::string& new_name) {
   wstring wold_name;
-  if (!AsWindowsPathWithUncPrefix(old_name, &wold_name)) {
+  if (!AsAbsoluteWindowsPath(old_name, &wold_name)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "RenameDirectory(%s, %s): AsWindowsPathWithUncPrefix(%s)",
-         old_name.c_str(), new_name.c_str(), old_name.c_str());
+         "RenameDirectory(%s, %s): AsAbsoluteWindowsPath(%s)", old_name.c_str(),
+         new_name.c_str(), old_name.c_str());
     return kRenameDirectoryFailureOtherError;
   }
 
   wstring wnew_name;
-  if (!AsWindowsPathWithUncPrefix(new_name, &wnew_name)) {
+  if (!AsAbsoluteWindowsPath(new_name, &wnew_name)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "RenameDirectory(%s, %s): AsWindowsPathWithUncPrefix(%s)",
-         old_name.c_str(), new_name.c_str(), new_name.c_str());
+         "RenameDirectory(%s, %s): AsAbsoluteWindowsPath(%s)", old_name.c_str(),
+         new_name.c_str(), new_name.c_str());
     return kRenameDirectoryFailureOtherError;
   }
 
@@ -739,14 +762,14 @@ static bool UnlinkPathW(const wstring& path) {
 }
 
 bool UnlinkPath(const string& file_path) {
-  if (IsDevNull(file_path)) {
+  if (IsDevNull(file_path.c_str())) {
     return false;
   }
 
   wstring wpath;
-  if (!AsWindowsPathWithUncPrefix(file_path, &wpath)) {
+  if (!AsAbsoluteWindowsPath(file_path, &wpath)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "UnlinkPath(%s): AsWindowsPathWithUncPrefix", file_path.c_str());
+         "UnlinkPath(%s): AsAbsoluteWindowsPath", file_path.c_str());
     return false;
   }
   return UnlinkPathW(wpath);
@@ -876,9 +899,9 @@ bool JunctionResolver::Resolve(const WCHAR* path, unique_ptr<WCHAR[]>* result) {
 
 bool ReadDirectorySymlink(const string& name, string* result) {
   wstring wname;
-  if (!AsWindowsPathWithUncPrefix(name, &wname)) {
+  if (!AsAbsoluteWindowsPath(name, &wname)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "ReadDirectorySymlink(%s): AsWindowsPathWithUncPrefix", name.c_str());
+         "ReadDirectorySymlink(%s): AsAbsoluteWindowsPath", name.c_str());
     return false;
   }
   unique_ptr<WCHAR[]> result_ptr;
@@ -893,13 +916,13 @@ bool PathExists(const string& path) {
   if (path.empty()) {
     return false;
   }
-  if (IsDevNull(path)) {
+  if (IsDevNull(path.c_str())) {
     return true;
   }
   wstring wpath;
-  if (!AsWindowsPathWithUncPrefix(path, &wpath)) {
+  if (!AsAbsoluteWindowsPath(path, &wpath)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "PathExists(%s): AsWindowsPathWithUncPrefix", path.c_str());
+         "PathExists(%s): AsAbsoluteWindowsPath", path.c_str());
     return false;
   }
   return JunctionResolver().Resolve(wpath.c_str(), nullptr);
@@ -913,9 +936,9 @@ string MakeCanonical(const char* path) {
   if (path == nullptr || path[0] == 0) {
     return "";
   }
-  if (!AsWindowsPathWithUncPrefix(path, &wpath)) {
+  if (!AsAbsoluteWindowsPath(path, &wpath)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "MakeCanonical(%s): AsWindowsPathWithUncPrefix", path);
+         "MakeCanonical(%s): AsAbsoluteWindowsPath", path);
   }
 
   // Resolve all segments of the path. Do this from leaf to root, so we always
@@ -1016,9 +1039,9 @@ static bool CanReadFileW(const wstring& path) {
 
 bool CanReadFile(const std::string& path) {
   wstring wpath;
-  if (!AsWindowsPathWithUncPrefix(path, &wpath)) {
+  if (!AsAbsoluteWindowsPath(path, &wpath)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "CanReadFile(%s): AsWindowsPathWithUncPrefix", path.c_str());
+         "CanReadFile(%s): AsAbsoluteWindowsPath", path.c_str());
     return false;
   }
   return CanReadFileW(wpath);
@@ -1026,9 +1049,9 @@ bool CanReadFile(const std::string& path) {
 
 bool CanExecuteFile(const std::string& path) {
   wstring wpath;
-  if (!AsWindowsPathWithUncPrefix(path, &wpath)) {
+  if (!AsAbsoluteWindowsPath(path, &wpath)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "CanExecuteFile(%s): AsWindowsPathWithUncPrefix", path.c_str());
+         "CanExecuteFile(%s): AsAbsoluteWindowsPath", path.c_str());
     return false;
   }
   return CanReadFileW(wpath) && (ends_with(wpath, wstring(L".exe")) ||
@@ -1039,9 +1062,9 @@ bool CanExecuteFile(const std::string& path) {
 
 bool CanAccessDirectory(const std::string& path) {
   wstring wpath;
-  if (!AsWindowsPathWithUncPrefix(path, &wpath)) {
+  if (!AsAbsoluteWindowsPath(path, &wpath)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "CanAccessDirectory(%s): AsWindowsPathWithUncPrefix", path.c_str());
+         "CanAccessDirectory(%s): AsAbsoluteWindowsPath", path.c_str());
     return false;
   }
   DWORD attr = ::GetFileAttributesW(wpath.c_str());
@@ -1086,8 +1109,12 @@ bool CanAccessDirectory(const std::string& path) {
   return true;
 }
 
-static bool IsDevNull(const string& path) {
-  return path == "/dev/null" || AsLower(path) == "nul";
+bool IsDevNull(const char* path) {
+  return path != NULL && *path != 0 &&
+         (strncmp("/dev/null\0", path, 10) == 0 ||
+          ((path[0] == 'N' || path[0] == 'n') &&
+           (path[1] == 'U' || path[1] == 'u') &&
+           (path[2] == 'L' || path[2] == 'l') && path[3] == 0));
 }
 
 static bool IsDirectoryW(const wstring& path) {
@@ -1098,13 +1125,13 @@ static bool IsDirectoryW(const wstring& path) {
 }
 
 bool IsDirectory(const string& path) {
-  if (path.empty() || IsDevNull(path)) {
+  if (path.empty() || IsDevNull(path.c_str())) {
     return false;
   }
   wstring wpath;
-  if (!AsWindowsPathWithUncPrefix(path, &wpath)) {
+  if (!AsAbsoluteWindowsPath(path, &wpath)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "IsDirectory(%s): AsWindowsPathWithUncPrefix", path.c_str());
+         "IsDirectory(%s): AsAbsoluteWindowsPath", path.c_str());
     return false;
   }
   return IsDirectoryW(wpath);
@@ -1132,14 +1159,13 @@ static bool MakeDirectoriesW(const wstring& path) {
   if (IsRootDirectoryW(path) || IsDirectoryW(path)) {
     return true;
   }
-  int last_separator = path.rfind(L"\\");
-  if (last_separator < 0) {
-    // Since `path` is not a root directory, there must be at least one
+  wstring parent = SplitPathW(path).first;
+  if (parent.empty()) {
+    // Since `path` is not a root directory, there should have been at least one
     // directory above it.
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
          "MakeDirectoriesW(%S), could not find dirname", path.c_str());
   }
-  wstring parent = path.substr(0, last_separator);
   return MakeDirectoriesW(parent) &&
          ::CreateDirectoryW(path.c_str(), NULL) == TRUE;
 }
@@ -1147,15 +1173,15 @@ static bool MakeDirectoriesW(const wstring& path) {
 bool MakeDirectories(const string& path, unsigned int mode) {
   // TODO(laszlocsomor): respect `mode` to the extent that it's possible on
   // Windows; it's currently ignored.
-  if (path.empty() || IsDevNull(path)) {
+  if (path.empty() || IsDevNull(path.c_str())) {
     return false;
   }
   wstring wpath;
   // According to MSDN, CreateDirectory's limit without the UNC prefix is
   // 248 characters (so it could fit another filename before reaching MAX_PATH).
-  if (!AsWindowsPathWithUncPrefix(path, &wpath, 248)) {
+  if (!AsAbsoluteWindowsPath(path, &wpath)) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "MakeDirectories(%s): AsWindowsPathWithUncPrefix", path.c_str());
+         "MakeDirectories(%s): AsAbsoluteWindowsPath", path.c_str());
     return false;
   }
   return MakeDirectoriesW(wpath);
@@ -1167,6 +1193,9 @@ static unique_ptr<WCHAR[]> GetCwdW() {
   if (!::GetCurrentDirectoryW(len, cwd.get())) {
     pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR, "GetCurrentDirectoryW");
   }
+  for (WCHAR* p = cwd.get(); *p != 0; ++p) {
+    *p = towlower(*p);
+  }
   return std::move(cwd);
 }
 
@@ -1174,20 +1203,23 @@ string GetCwd() {
   return string(WstringToCstring(RemoveUncPrefixMaybe(GetCwdW().get())).get());
 }
 
+static char GetCurrentDrive() {
+  unique_ptr<wchar_t[]> cwd = GetCwdW();
+  wchar_t wdrive = RemoveUncPrefixMaybe(cwd.get())[0];
+  wchar_t offset = wdrive >= L'A' && wdrive <= L'Z' ? L'A' : L'a';
+  return 'a' + wdrive - offset;
+}
+
 bool ChangeDirectory(const string& path) {
-  wstring wpath;
-  if (!AsWindowsPathWithUncPrefix(path, &wpath)) {
-    pdie(blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR,
-         "ChangeDirectory(%s): AsWindowsPathWithUncPrefix", path.c_str());
-    return false;
-  }
-  return ::SetCurrentDirectoryW(wpath.c_str()) == TRUE;
+  string spath;
+  return AsShortWindowsPath(path, &spath) &&
+         ::SetCurrentDirectoryA(spath.c_str()) == TRUE;
 }
 
 void ForEachDirectoryEntry(const string &path,
                            DirectoryEntryConsumer *consume) {
   wstring wpath;
-  if (path.empty() || IsDevNull(path)) {
+  if (path.empty() || IsDevNull(path.c_str())) {
     return;
   }
   if (!AsWindowsPath(path, &wpath)) {

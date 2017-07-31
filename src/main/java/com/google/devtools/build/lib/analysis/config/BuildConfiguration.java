@@ -596,11 +596,11 @@ public final class BuildConfiguration implements BuildEvent {
     public boolean stampBinaries;
 
     // This default value is always overwritten in the case of "bazel coverage" by
-    // CoverageCommand.setDefaultInstrumentationFilter().
+    // a value returned by InstrumentationFilterSupport.computeInstrumentationFilter.
     @Option(
       name = "instrumentation_filter",
       converter = RegexFilter.RegexFilterConverter.class,
-      defaultValue = "-/javatests[/:]",
+      defaultValue = "-/javatests[/:],-/test/java[/:]",
       category = "semantics",
       documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
       effectTags = {OptionEffectTag.UNKNOWN},
@@ -1087,17 +1087,6 @@ public final class BuildConfiguration implements BuildEvent {
       /**
        * Same as NOTRIM.
        *
-       * <p>This used to revert certain special cases to static configurations because dynamic
-       * configuration didn't support them. But now all builds use dynamic configurations. This
-       * value will be removed once we know no one is setting it.
-       *
-       * @deprecated use {@link #NOTRIM} instead
-       */
-      @Deprecated
-      NOTRIM_PARTIAL,
-      /**
-       * Same as NOTRIM.
-       *
        * <p>This used to disable dynamic configurations (while the feature was still being
        * developed). But now all builds use dynamic configurations. This value will be removed
        * once we know no one is setting it.
@@ -1119,12 +1108,7 @@ public final class BuildConfiguration implements BuildEvent {
       @Override
       public DynamicConfigsMode convert(String input) throws OptionsParsingException {
         DynamicConfigsMode userSetValue = super.convert(input);
-        if (userSetValue == DynamicConfigsMode.OFF
-            || userSetValue == DynamicConfigsMode.NOTRIM_PARTIAL) {
-          return DynamicConfigsMode.NOTRIM;
-        } else {
-          return userSetValue;
-        }
+        return userSetValue == DynamicConfigsMode.OFF ? DynamicConfigsMode.NOTRIM : userSetValue;
       }
     }
 
@@ -1166,6 +1150,8 @@ public final class BuildConfiguration implements BuildEvent {
       host.compilationMode = CompilationMode.OPT;
       host.isHost = true;
       host.useDynamicConfigurations = useDynamicConfigurations;
+      host.enableRunfiles = enableRunfiles;
+      host.buildPythonZip = buildPythonZip;
       host.commandLineBuildVariables = commandLineBuildVariables;
       host.enforceConstraints = enforceConstraints;
       host.separateGenfilesDirectory = separateGenfilesDirectory;
@@ -2174,6 +2160,16 @@ public final class BuildConfiguration implements BuildEvent {
     if (toTarget instanceof Rule && ((Rule) toTarget).getRuleClassObject().isConfigMatcher()) {
       transitionApplier.applyTransition(Attribute.ConfigurationTransition.NONE); // Unnecessary.
       return;
+    }
+
+    // Apply the parent rule's outgoing transition if it has one.
+    RuleTransitionFactory transitionFactory =
+        fromRule.getRuleClassObject().getOutgoingTransitionFactory();
+    if (transitionFactory != null) {
+      Transition transition = transitionFactory.buildTransitionFor(toTarget.getAssociatedRule());
+      if (transition != null) {
+        transitionApplier.applyTransition(transition);
+      }
     }
 
     // TODO(gregce): make the below transitions composable (i.e. take away the "else" clauses) once

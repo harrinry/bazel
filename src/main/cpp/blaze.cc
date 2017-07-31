@@ -30,7 +30,6 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <stdarg.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -44,6 +43,7 @@
 
 #include <algorithm>
 #include <chrono>  // NOLINT (gRPC requires this)
+#include <cinttypes>
 #include <mutex>   // NOLINT
 #include <set>
 #include <string>
@@ -1323,6 +1323,13 @@ int Main(int argc, const char *argv[], WorkspaceLayout *workspace_layout,
 
   globals = new GlobalVariables(option_processor);
   blaze::SetupStdStreams();
+  if (argc == 1 && blaze::WarnIfStartedFromDesktop()) {
+    // Only check and warn for from-desktop start if there were no args.
+    // In this case the user probably clicked Bazel's icon (as opposed to either
+    // starting it from a terminal, or as a subprocess with args, or on Windows
+    // from a ".lnk" file with some args).
+    return blaze_exit_code::LOCAL_ENVIRONMENTAL_ERROR;
+  }
 
   // Best-effort operation to raise the resource limits from soft to hard.  We
   // do this early during the main program instead of just before execing the

@@ -23,8 +23,6 @@ import com.google.devtools.build.lib.buildeventstream.BuildEventWithConfiguratio
 import com.google.devtools.build.lib.buildeventstream.GenericBuildEvent;
 import com.google.devtools.build.lib.buildeventstream.NullConfiguration;
 import com.google.devtools.build.lib.buildeventstream.PathConverter;
-import com.google.devtools.build.lib.causes.ActionFailed;
-import com.google.devtools.build.lib.causes.Cause;
 import com.google.devtools.build.lib.vfs.Path;
 import java.util.Collection;
 
@@ -71,12 +69,13 @@ public class ActionExecutedEvent implements BuildEventWithConfiguration {
 
   @Override
   public BuildEventId getEventId() {
-    if (getException() != null) {
-      Cause cause =
-          new ActionFailed(action.getPrimaryOutput().getPath(), action.getOwner().getLabel());
-      return BuildEventId.fromCause(cause);
-    } else {
+    if (action.getOwner() == null) {
       return BuildEventId.actionCompleted(action.getPrimaryOutput().getPath());
+    } else {
+      return BuildEventId.actionCompleted(
+          action.getPrimaryOutput().getPath(),
+          action.getOwner().getLabel(),
+          action.getOwner().getConfigurationChecksum());
     }
   }
 
@@ -114,7 +113,7 @@ public class ActionExecutedEvent implements BuildEventWithConfiguration {
           .build());
     }
     if (stderr != null) {
-      actionBuilder.setStdout(
+      actionBuilder.setStderr(
           BuildEventStreamProtos.File.newBuilder()
           .setName("stderr")
           .setUri(pathConverter.apply(stderr))

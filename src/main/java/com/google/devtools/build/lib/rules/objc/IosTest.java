@@ -35,6 +35,7 @@ import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
 import com.google.devtools.build.lib.rules.RuleConfiguredTargetFactory;
 import com.google.devtools.build.lib.rules.apple.AppleConfiguration;
 import com.google.devtools.build.lib.rules.apple.ApplePlatform.PlatformType;
+import com.google.devtools.build.lib.rules.apple.XcodeConfig;
 import com.google.devtools.build.lib.rules.objc.CompilationSupport.ExtraLinkArgs;
 import com.google.devtools.build.lib.rules.objc.ObjcCommon.ResourceAttributes;
 import com.google.devtools.build.lib.rules.objc.ReleaseBundlingSupport.LinkedBinary;
@@ -181,7 +182,7 @@ public final class IosTest implements RuleConfiguredTargetFactory {
             common.getObjcProvider(),
             LinkedBinary.LOCAL_AND_DEPENDENCIES,
             bundleFormat,
-            appleConfiguration.getMinimumOsForPlatformType(PlatformType.IOS),
+            XcodeConfig.getMinimumOsForPlatformType(ruleContext, PlatformType.IOS),
             appleConfiguration.getMultiArchPlatform(PlatformType.IOS))
         .registerActions(DsymOutputType.TEST)
         .addFilesToBuild(filesToBuild, Optional.of(DsymOutputType.TEST))
@@ -267,7 +268,7 @@ public final class IosTest implements RuleConfiguredTargetFactory {
             .addDepObjcProviders(protosObjcProvider.asSet())
             .addNonPropagatedDepObjcProviders(
                 ruleContext.getPrerequisites(
-                    "non_propagated_deps", Mode.TARGET, ObjcProvider.class))
+                    "non_propagated_deps", Mode.TARGET, ObjcProvider.SKYLARK_CONSTRUCTOR))
             .setIntermediateArtifacts(ObjcRuleClasses.intermediateArtifacts(ruleContext))
             .setHasModuleMap();
 
@@ -282,7 +283,8 @@ public final class IosTest implements RuleConfiguredTargetFactory {
     ObjcConfiguration config = ruleContext.getFragment(ObjcConfiguration.class);
     if (config.runMemleaks()) {
       builder.addDepObjcProviders(
-          ruleContext.getPrerequisites(MEMLEAKS_DEP_ATTR, Mode.TARGET, ObjcProvider.class));
+          ruleContext.getPrerequisites(
+              MEMLEAKS_DEP_ATTR, Mode.TARGET, ObjcProvider.SKYLARK_CONSTRUCTOR));
     }
 
     return builder.build();
@@ -294,6 +296,7 @@ public final class IosTest implements RuleConfiguredTargetFactory {
 
   /** Returns the {@link XcTestAppProvider} of the {@code xctest_app} attribute. */
   protected static XcTestAppProvider xcTestAppProvider(RuleContext ruleContext) {
-    return ruleContext.getPrerequisite(XCTEST_APP_ATTR, Mode.TARGET, XcTestAppProvider.class);
+    return ruleContext.getPrerequisite(
+        XCTEST_APP_ATTR, Mode.TARGET, XcTestAppProvider.SKYLARK_CONSTRUCTOR);
   }
 }
