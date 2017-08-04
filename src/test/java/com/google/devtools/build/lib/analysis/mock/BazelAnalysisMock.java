@@ -13,7 +13,7 @@
 // limitations under the License.
 package com.google.devtools.build.lib.analysis.mock;
 
-import static com.google.devtools.build.lib.bazel.rules.BazelRuleClassProvider.FEATURE_POLICY_FEATURES;
+import static com.google.devtools.build.lib.rules.core.CoreRules.FEATURE_POLICY_FEATURES;
 
 import com.google.common.base.Functions;
 import com.google.common.collect.ImmutableList;
@@ -147,6 +147,12 @@ public final class BazelAnalysisMock extends AnalysisMock {
         "package(default_visibility=['//visibility:public'])",
         "exports_files(['precompile.py'])",
         "cc_binary(name='zipper', srcs=['zip_main.cc'])");
+
+    config.create(
+        "/bazel_tools_workspace/tools/launcher/BUILD",
+        "package(default_visibility=['//visibility:public'])",
+        "cc_binary(name='launcher', srcs=['launcher_main.cc'])");
+
     ccSupport().setup(config);
   }
 
@@ -205,16 +211,6 @@ public final class BazelAnalysisMock extends AnalysisMock {
         .add("sh_binary(name = 'strip_resources', srcs = ['empty.sh'])")
         .add("sh_binary(name = 'build_incremental_dexmanifest', srcs = ['empty.sh'])")
         .add("sh_binary(name = 'incremental_install', srcs = ['empty.sh'])")
-        .add("java_binary(name = 'JarFilter',")
-        .add("          runtime_deps = [ ':JarFilter_import'],")
-        .add("          main_class = 'com.google.devtools.build.android.ideinfo.JarFilter')")
-        .add("java_import(name = 'JarFilter_import',")
-        .add("          jars = [ 'jar_filter_deploy.jar' ])")
-        .add("java_binary(name = 'PackageParser',")
-        .add("          runtime_deps = [ ':PackageParser_import'],")
-        .add("          main_class = 'com.google.devtools.build.android.ideinfo.PackageParser')")
-        .add("java_import(name = 'PackageParser_import',")
-        .add("          jars = [ 'package_parser_deploy.jar' ])")
         .add("java_binary(name = 'IdlClass',")
         .add("            runtime_deps = [ ':idlclass_import' ],")
         .add("            main_class = 'com.google.devtools.build.android.idlclass.IdlClass')")

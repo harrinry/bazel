@@ -869,23 +869,9 @@ toolchain {
   }
   feature {
     name: "bitcode_embedded"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode"
-      }
-    }
   }
   feature {
     name: "bitcode_embedded_markers"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode-marker"
-      }
-    }
   }
   feature {
     name: "objc_arc"
@@ -1029,6 +1015,9 @@ toolchain {
     }
   }
   feature {
+    name: "cpp_linker_flags"
+  }
+  feature {
     name: "apply_implicit_frameworks"
     flag_set {
       action: "objc-executable"
@@ -1048,6 +1037,69 @@ toolchain {
       }
     }
   }
+  feature {
+    name: "apply_simulator_compiler_flags"
+  }
+  feature {
+    name: "unfiltered_cxx_flags"
+  }
+  feature {
+    name: "copts"
+    flag_set {
+      action: "assemble"
+      action: "preprocess-assemble"
+      action: "c-compile"
+      action: "c++-compile"
+      action: "c++-header-parsing"
+      action: "c++-header-preprocessing"
+      action: "c++-module-compile"
+      action: "c++-module-codegen"
+      action: "objc-compile"
+      action: "objc++-compile"
+      flag_group {
+        flag: "%{copts}"
+        iterate_over: "copts"
+      }
+      expand_if_all_available: "copts"
+    }
+  }
+  action_config {
+    config_name: "strip"
+    action_name: "strip"
+    tool {
+      tool_path: "/usr/bin/strip"
+    }
+    flag_set {
+      flag_group {
+        flag: "-S"
+        flag: "-o"
+        flag: "%{output_file}"
+        flag: "-R"
+        flag: ".gnu.switches.text.quote_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.bracket_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.system_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_defines"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_includes"
+        flag: "-R"
+        flag: ".gnu.switches.text.cl_args"
+        flag: "-R"
+        flag: ".gnu.switches.text.lipo_info"
+        flag: "-R"
+        flag: ".gnu.switches.text.annotation"
+      }
+      flag_group {
+        flag: "%{stripopts}"
+        iterate_over: "stripopts"
+      }
+      flag_group {
+        flag: "%{input_file}"
+      }
+    }
+  }
   action_config {
     config_name: "c-compile"
     action_name: "c-compile"
@@ -1055,6 +1107,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -1069,6 +1122,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -1083,6 +1137,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -1097,6 +1152,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -1111,6 +1167,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -1141,6 +1198,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
   }
   action_config {
     config_name: "objc++-compile"
@@ -1166,6 +1224,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
   }
   action_config {
     config_name: "assemble"
@@ -1174,6 +1233,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "include_system_dirs"
@@ -1186,6 +1246,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -1350,6 +1411,7 @@ toolchain {
     action_name: "c++-link-executable"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "symbol_counts"
     implies: "linkstamps"
@@ -1369,6 +1431,7 @@ toolchain {
     action_name: "c++-link-dynamic-library"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "has_configured_linker_path"
     implies: "symbol_counts"
@@ -1389,6 +1452,7 @@ toolchain {
     action_name: "c++-link-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -1402,6 +1466,7 @@ toolchain {
     action_name: "c++-link-alwayslink-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -1415,6 +1480,7 @@ toolchain {
     action_name: "c++-link-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -1428,6 +1494,7 @@ toolchain {
     action_name: "c++-link-alwayslink-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -2298,23 +2365,9 @@ toolchain {
   }
   feature {
     name: "bitcode_embedded"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode"
-      }
-    }
   }
   feature {
     name: "bitcode_embedded_markers"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode-marker"
-      }
-    }
   }
   feature {
     name: "objc_arc"
@@ -2459,6 +2512,9 @@ toolchain {
     }
   }
   feature {
+    name: "cpp_linker_flags"
+  }
+  feature {
     name: "apply_implicit_frameworks"
     flag_set {
       action: "objc-executable"
@@ -2468,6 +2524,9 @@ toolchain {
         flag: "-framework UIKit"
       }
     }
+  }
+  feature {
+    name: "link_cocoa"
   }
   feature {
     name: "apply_simulator_compiler_flags"
@@ -2482,6 +2541,66 @@ toolchain {
       }
     }
   }
+  feature {
+    name: "unfiltered_cxx_flags"
+  }
+  feature {
+    name: "copts"
+    flag_set {
+      action: "assemble"
+      action: "preprocess-assemble"
+      action: "c-compile"
+      action: "c++-compile"
+      action: "c++-header-parsing"
+      action: "c++-header-preprocessing"
+      action: "c++-module-compile"
+      action: "c++-module-codegen"
+      action: "objc-compile"
+      action: "objc++-compile"
+      flag_group {
+        flag: "%{copts}"
+        iterate_over: "copts"
+      }
+      expand_if_all_available: "copts"
+    }
+  }
+  action_config {
+    config_name: "strip"
+    action_name: "strip"
+    tool {
+      tool_path: "/usr/bin/strip"
+    }
+    flag_set {
+      flag_group {
+        flag: "-S"
+        flag: "-o"
+        flag: "%{output_file}"
+        flag: "-R"
+        flag: ".gnu.switches.text.quote_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.bracket_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.system_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_defines"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_includes"
+        flag: "-R"
+        flag: ".gnu.switches.text.cl_args"
+        flag: "-R"
+        flag: ".gnu.switches.text.lipo_info"
+        flag: "-R"
+        flag: ".gnu.switches.text.annotation"
+      }
+      flag_group {
+        flag: "%{stripopts}"
+        iterate_over: "stripopts"
+      }
+      flag_group {
+        flag: "%{input_file}"
+      }
+    }
+  }
   action_config {
     config_name: "c-compile"
     action_name: "c-compile"
@@ -2489,6 +2608,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -2503,6 +2623,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -2517,6 +2638,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -2531,6 +2653,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -2545,6 +2668,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -2575,6 +2699,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
     implies: "apply_simulator_compiler_flags"
   }
   action_config {
@@ -2601,6 +2726,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
     implies: "apply_simulator_compiler_flags"
   }
   action_config {
@@ -2610,6 +2736,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "include_system_dirs"
@@ -2622,6 +2749,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -2786,6 +2914,7 @@ toolchain {
     action_name: "c++-link-executable"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "symbol_counts"
     implies: "linkstamps"
@@ -2805,6 +2934,7 @@ toolchain {
     action_name: "c++-link-dynamic-library"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "has_configured_linker_path"
     implies: "symbol_counts"
@@ -2825,6 +2955,7 @@ toolchain {
     action_name: "c++-link-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -2838,6 +2969,7 @@ toolchain {
     action_name: "c++-link-alwayslink-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -2851,6 +2983,7 @@ toolchain {
     action_name: "c++-link-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -2864,6 +2997,7 @@ toolchain {
     action_name: "c++-link-alwayslink-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -3736,23 +3870,9 @@ toolchain {
   }
   feature {
     name: "bitcode_embedded"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode"
-      }
-    }
   }
   feature {
     name: "bitcode_embedded_markers"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode-marker"
-      }
-    }
   }
   feature {
     name: "objc_arc"
@@ -3897,6 +4017,9 @@ toolchain {
     }
   }
   feature {
+    name: "cpp_linker_flags"
+  }
+  feature {
     name: "apply_implicit_frameworks"
     flag_set {
       action: "objc-executable"
@@ -3906,6 +4029,9 @@ toolchain {
         flag: "-framework UIKit"
       }
     }
+  }
+  feature {
+    name: "link_cocoa"
   }
   feature {
     name: "apply_simulator_compiler_flags"
@@ -3920,6 +4046,66 @@ toolchain {
       }
     }
   }
+  feature {
+    name: "unfiltered_cxx_flags"
+  }
+  feature {
+    name: "copts"
+    flag_set {
+      action: "assemble"
+      action: "preprocess-assemble"
+      action: "c-compile"
+      action: "c++-compile"
+      action: "c++-header-parsing"
+      action: "c++-header-preprocessing"
+      action: "c++-module-compile"
+      action: "c++-module-codegen"
+      action: "objc-compile"
+      action: "objc++-compile"
+      flag_group {
+        flag: "%{copts}"
+        iterate_over: "copts"
+      }
+      expand_if_all_available: "copts"
+    }
+  }
+  action_config {
+    config_name: "strip"
+    action_name: "strip"
+    tool {
+      tool_path: "/usr/bin/strip"
+    }
+    flag_set {
+      flag_group {
+        flag: "-S"
+        flag: "-o"
+        flag: "%{output_file}"
+        flag: "-R"
+        flag: ".gnu.switches.text.quote_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.bracket_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.system_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_defines"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_includes"
+        flag: "-R"
+        flag: ".gnu.switches.text.cl_args"
+        flag: "-R"
+        flag: ".gnu.switches.text.lipo_info"
+        flag: "-R"
+        flag: ".gnu.switches.text.annotation"
+      }
+      flag_group {
+        flag: "%{stripopts}"
+        iterate_over: "stripopts"
+      }
+      flag_group {
+        flag: "%{input_file}"
+      }
+    }
+  }
   action_config {
     config_name: "c-compile"
     action_name: "c-compile"
@@ -3927,6 +4113,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -3941,6 +4128,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -3955,6 +4143,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -3969,6 +4158,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -3983,6 +4173,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -4013,6 +4204,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
     implies: "apply_simulator_compiler_flags"
   }
   action_config {
@@ -4039,6 +4231,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
     implies: "apply_simulator_compiler_flags"
   }
   action_config {
@@ -4048,6 +4241,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "include_system_dirs"
@@ -4060,6 +4254,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -4224,6 +4419,7 @@ toolchain {
     action_name: "c++-link-executable"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "symbol_counts"
     implies: "linkstamps"
@@ -4243,6 +4439,7 @@ toolchain {
     action_name: "c++-link-dynamic-library"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "has_configured_linker_path"
     implies: "symbol_counts"
@@ -4263,6 +4460,7 @@ toolchain {
     action_name: "c++-link-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -4276,6 +4474,7 @@ toolchain {
     action_name: "c++-link-alwayslink-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -4289,6 +4488,7 @@ toolchain {
     action_name: "c++-link-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -4302,6 +4502,7 @@ toolchain {
     action_name: "c++-link-alwayslink-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -5173,23 +5374,9 @@ toolchain {
   }
   feature {
     name: "bitcode_embedded"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode"
-      }
-    }
   }
   feature {
     name: "bitcode_embedded_markers"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode-marker"
-      }
-    }
   }
   feature {
     name: "objc_arc"
@@ -5334,6 +5521,20 @@ toolchain {
     }
   }
   feature {
+    name: "cpp_linker_flags"
+    flag_set {
+      action: "c++-link-executable"
+      action: "c++-link-dynamic-library"
+      flag_group {
+        flag: "-lc++"
+        flag: "-undefined"
+        flag: "dynamic_lookup"
+        flag: "-target"
+        flag: "x86_64-apple-tvos"
+      }
+    }
+  }
+  feature {
     name: "apply_implicit_frameworks"
     flag_set {
       action: "objc-executable"
@@ -5343,6 +5544,9 @@ toolchain {
         flag: "-framework UIKit"
       }
     }
+  }
+  feature {
+    name: "link_cocoa"
   }
   feature {
     name: "apply_simulator_compiler_flags"
@@ -5373,16 +5577,59 @@ toolchain {
     }
   }
   feature {
-    name: "cpp_linker_flags"
+    name: "copts"
     flag_set {
-      action: "c++-link-executable"
-      action: "c++-link-dynamic-library"
+      action: "assemble"
+      action: "preprocess-assemble"
+      action: "c-compile"
+      action: "c++-compile"
+      action: "c++-header-parsing"
+      action: "c++-header-preprocessing"
+      action: "c++-module-compile"
+      action: "c++-module-codegen"
+      action: "objc-compile"
+      action: "objc++-compile"
       flag_group {
-        flag: "-lc++"
-        flag: "-undefined"
-        flag: "dynamic_lookup"
-        flag: "-target"
-        flag: "x86_64-apple-tvos"
+        flag: "%{copts}"
+        iterate_over: "copts"
+      }
+      expand_if_all_available: "copts"
+    }
+  }
+  action_config {
+    config_name: "strip"
+    action_name: "strip"
+    tool {
+      tool_path: "/usr/bin/strip"
+    }
+    flag_set {
+      flag_group {
+        flag: "-S"
+        flag: "-o"
+        flag: "%{output_file}"
+        flag: "-R"
+        flag: ".gnu.switches.text.quote_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.bracket_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.system_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_defines"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_includes"
+        flag: "-R"
+        flag: ".gnu.switches.text.cl_args"
+        flag: "-R"
+        flag: ".gnu.switches.text.lipo_info"
+        flag: "-R"
+        flag: ".gnu.switches.text.annotation"
+      }
+      flag_group {
+        flag: "%{stripopts}"
+        iterate_over: "stripopts"
+      }
+      flag_group {
+        flag: "%{input_file}"
       }
     }
   }
@@ -5393,6 +5640,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -5408,6 +5656,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -5423,6 +5672,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -5438,6 +5688,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -5453,6 +5704,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -5484,6 +5736,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
     implies: "apply_simulator_compiler_flags"
   }
   action_config {
@@ -5510,6 +5763,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
     implies: "apply_simulator_compiler_flags"
   }
   action_config {
@@ -5519,6 +5773,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "include_system_dirs"
@@ -5532,6 +5787,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -5697,6 +5953,7 @@ toolchain {
     action_name: "c++-link-executable"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "symbol_counts"
     implies: "linkstamps"
@@ -5717,6 +5974,7 @@ toolchain {
     action_name: "c++-link-dynamic-library"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "has_configured_linker_path"
     implies: "symbol_counts"
@@ -5738,6 +5996,7 @@ toolchain {
     action_name: "c++-link-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -5751,6 +6010,7 @@ toolchain {
     action_name: "c++-link-alwayslink-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -5764,6 +6024,7 @@ toolchain {
     action_name: "c++-link-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -5777,6 +6038,7 @@ toolchain {
     action_name: "c++-link-alwayslink-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -6647,23 +6909,9 @@ toolchain {
   }
   feature {
     name: "bitcode_embedded"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode"
-      }
-    }
   }
   feature {
     name: "bitcode_embedded_markers"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode-marker"
-      }
-    }
   }
   feature {
     name: "objc_arc"
@@ -6808,6 +7056,9 @@ toolchain {
     }
   }
   feature {
+    name: "cpp_linker_flags"
+  }
+  feature {
     name: "apply_implicit_frameworks"
     flag_set {
       action: "objc-executable"
@@ -6817,6 +7068,9 @@ toolchain {
         flag: "-framework UIKit"
       }
     }
+  }
+  feature {
+    name: "link_cocoa"
   }
   feature {
     name: "apply_simulator_compiler_flags"
@@ -6831,6 +7085,66 @@ toolchain {
       }
     }
   }
+  feature {
+    name: "unfiltered_cxx_flags"
+  }
+  feature {
+    name: "copts"
+    flag_set {
+      action: "assemble"
+      action: "preprocess-assemble"
+      action: "c-compile"
+      action: "c++-compile"
+      action: "c++-header-parsing"
+      action: "c++-header-preprocessing"
+      action: "c++-module-compile"
+      action: "c++-module-codegen"
+      action: "objc-compile"
+      action: "objc++-compile"
+      flag_group {
+        flag: "%{copts}"
+        iterate_over: "copts"
+      }
+      expand_if_all_available: "copts"
+    }
+  }
+  action_config {
+    config_name: "strip"
+    action_name: "strip"
+    tool {
+      tool_path: "/usr/bin/strip"
+    }
+    flag_set {
+      flag_group {
+        flag: "-S"
+        flag: "-o"
+        flag: "%{output_file}"
+        flag: "-R"
+        flag: ".gnu.switches.text.quote_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.bracket_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.system_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_defines"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_includes"
+        flag: "-R"
+        flag: ".gnu.switches.text.cl_args"
+        flag: "-R"
+        flag: ".gnu.switches.text.lipo_info"
+        flag: "-R"
+        flag: ".gnu.switches.text.annotation"
+      }
+      flag_group {
+        flag: "%{stripopts}"
+        iterate_over: "stripopts"
+      }
+      flag_group {
+        flag: "%{input_file}"
+      }
+    }
+  }
   action_config {
     config_name: "c-compile"
     action_name: "c-compile"
@@ -6838,6 +7152,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -6852,6 +7167,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -6866,6 +7182,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -6880,6 +7197,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -6894,6 +7212,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -6924,6 +7243,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
     implies: "apply_simulator_compiler_flags"
   }
   action_config {
@@ -6950,6 +7270,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
     implies: "apply_simulator_compiler_flags"
   }
   action_config {
@@ -6959,6 +7280,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "include_system_dirs"
@@ -6971,6 +7293,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -7135,6 +7458,7 @@ toolchain {
     action_name: "c++-link-executable"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "symbol_counts"
     implies: "linkstamps"
@@ -7154,6 +7478,7 @@ toolchain {
     action_name: "c++-link-dynamic-library"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "has_configured_linker_path"
     implies: "symbol_counts"
@@ -7174,6 +7499,7 @@ toolchain {
     action_name: "c++-link-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -7187,6 +7513,7 @@ toolchain {
     action_name: "c++-link-alwayslink-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -7200,6 +7527,7 @@ toolchain {
     action_name: "c++-link-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -7213,6 +7541,7 @@ toolchain {
     action_name: "c++-link-alwayslink-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -8083,23 +8412,9 @@ toolchain {
   }
   feature {
     name: "bitcode_embedded"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode"
-      }
-    }
   }
   feature {
     name: "bitcode_embedded_markers"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode-marker"
-      }
-    }
   }
   feature {
     name: "objc_arc"
@@ -8244,6 +8559,9 @@ toolchain {
     }
   }
   feature {
+    name: "cpp_linker_flags"
+  }
+  feature {
     name: "apply_implicit_frameworks"
     flag_set {
       action: "objc-executable"
@@ -8254,6 +8572,72 @@ toolchain {
       }
     }
   }
+  feature {
+    name: "link_cocoa"
+  }
+  feature {
+    name: "apply_simulator_compiler_flags"
+  }
+  feature {
+    name: "unfiltered_cxx_flags"
+  }
+  feature {
+    name: "copts"
+    flag_set {
+      action: "assemble"
+      action: "preprocess-assemble"
+      action: "c-compile"
+      action: "c++-compile"
+      action: "c++-header-parsing"
+      action: "c++-header-preprocessing"
+      action: "c++-module-compile"
+      action: "c++-module-codegen"
+      action: "objc-compile"
+      action: "objc++-compile"
+      flag_group {
+        flag: "%{copts}"
+        iterate_over: "copts"
+      }
+      expand_if_all_available: "copts"
+    }
+  }
+  action_config {
+    config_name: "strip"
+    action_name: "strip"
+    tool {
+      tool_path: "/usr/bin/strip"
+    }
+    flag_set {
+      flag_group {
+        flag: "-S"
+        flag: "-o"
+        flag: "%{output_file}"
+        flag: "-R"
+        flag: ".gnu.switches.text.quote_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.bracket_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.system_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_defines"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_includes"
+        flag: "-R"
+        flag: ".gnu.switches.text.cl_args"
+        flag: "-R"
+        flag: ".gnu.switches.text.lipo_info"
+        flag: "-R"
+        flag: ".gnu.switches.text.annotation"
+      }
+      flag_group {
+        flag: "%{stripopts}"
+        iterate_over: "stripopts"
+      }
+      flag_group {
+        flag: "%{input_file}"
+      }
+    }
+  }
   action_config {
     config_name: "c-compile"
     action_name: "c-compile"
@@ -8261,6 +8645,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -8275,6 +8660,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -8289,6 +8675,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -8303,6 +8690,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -8317,6 +8705,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -8347,6 +8736,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
   }
   action_config {
     config_name: "objc++-compile"
@@ -8372,6 +8762,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
   }
   action_config {
     config_name: "assemble"
@@ -8380,6 +8771,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "include_system_dirs"
@@ -8392,6 +8784,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -8556,6 +8949,7 @@ toolchain {
     action_name: "c++-link-executable"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "symbol_counts"
     implies: "linkstamps"
@@ -8575,6 +8969,7 @@ toolchain {
     action_name: "c++-link-dynamic-library"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "has_configured_linker_path"
     implies: "symbol_counts"
@@ -8595,6 +8990,7 @@ toolchain {
     action_name: "c++-link-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -8608,6 +9004,7 @@ toolchain {
     action_name: "c++-link-alwayslink-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -8621,6 +9018,7 @@ toolchain {
     action_name: "c++-link-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -8634,6 +9032,7 @@ toolchain {
     action_name: "c++-link-alwayslink-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -9506,23 +9905,9 @@ toolchain {
   }
   feature {
     name: "bitcode_embedded"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode"
-      }
-    }
   }
   feature {
     name: "bitcode_embedded_markers"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode-marker"
-      }
-    }
   }
   feature {
     name: "objc_arc"
@@ -9667,6 +10052,9 @@ toolchain {
     }
   }
   feature {
+    name: "cpp_linker_flags"
+  }
+  feature {
     name: "apply_implicit_frameworks"
     flag_set {
       action: "objc-executable"
@@ -9677,6 +10065,72 @@ toolchain {
       }
     }
   }
+  feature {
+    name: "link_cocoa"
+  }
+  feature {
+    name: "apply_simulator_compiler_flags"
+  }
+  feature {
+    name: "unfiltered_cxx_flags"
+  }
+  feature {
+    name: "copts"
+    flag_set {
+      action: "assemble"
+      action: "preprocess-assemble"
+      action: "c-compile"
+      action: "c++-compile"
+      action: "c++-header-parsing"
+      action: "c++-header-preprocessing"
+      action: "c++-module-compile"
+      action: "c++-module-codegen"
+      action: "objc-compile"
+      action: "objc++-compile"
+      flag_group {
+        flag: "%{copts}"
+        iterate_over: "copts"
+      }
+      expand_if_all_available: "copts"
+    }
+  }
+  action_config {
+    config_name: "strip"
+    action_name: "strip"
+    tool {
+      tool_path: "/usr/bin/strip"
+    }
+    flag_set {
+      flag_group {
+        flag: "-S"
+        flag: "-o"
+        flag: "%{output_file}"
+        flag: "-R"
+        flag: ".gnu.switches.text.quote_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.bracket_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.system_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_defines"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_includes"
+        flag: "-R"
+        flag: ".gnu.switches.text.cl_args"
+        flag: "-R"
+        flag: ".gnu.switches.text.lipo_info"
+        flag: "-R"
+        flag: ".gnu.switches.text.annotation"
+      }
+      flag_group {
+        flag: "%{stripopts}"
+        iterate_over: "stripopts"
+      }
+      flag_group {
+        flag: "%{input_file}"
+      }
+    }
+  }
   action_config {
     config_name: "c-compile"
     action_name: "c-compile"
@@ -9684,6 +10138,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -9698,6 +10153,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -9712,6 +10168,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -9726,6 +10183,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -9740,6 +10198,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -9770,6 +10229,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
   }
   action_config {
     config_name: "objc++-compile"
@@ -9795,6 +10255,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
   }
   action_config {
     config_name: "assemble"
@@ -9803,6 +10264,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "include_system_dirs"
@@ -9815,6 +10277,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -9979,6 +10442,7 @@ toolchain {
     action_name: "c++-link-executable"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "symbol_counts"
     implies: "linkstamps"
@@ -9998,6 +10462,7 @@ toolchain {
     action_name: "c++-link-dynamic-library"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "has_configured_linker_path"
     implies: "symbol_counts"
@@ -10018,6 +10483,7 @@ toolchain {
     action_name: "c++-link-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -10031,6 +10497,7 @@ toolchain {
     action_name: "c++-link-alwayslink-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -10044,6 +10511,7 @@ toolchain {
     action_name: "c++-link-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -10057,6 +10525,7 @@ toolchain {
     action_name: "c++-link-alwayslink-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -10928,23 +11397,9 @@ toolchain {
   }
   feature {
     name: "bitcode_embedded"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode"
-      }
-    }
   }
   feature {
     name: "bitcode_embedded_markers"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode-marker"
-      }
-    }
   }
   feature {
     name: "objc_arc"
@@ -11089,6 +11544,20 @@ toolchain {
     }
   }
   feature {
+    name: "cpp_linker_flags"
+    flag_set {
+      action: "c++-link-executable"
+      action: "c++-link-dynamic-library"
+      flag_group {
+        flag: "-lc++"
+        flag: "-undefined"
+        flag: "dynamic_lookup"
+        flag: "-target"
+        flag: "arm64-apple-tvos"
+      }
+    }
+  }
+  feature {
     name: "apply_implicit_frameworks"
     flag_set {
       action: "objc-executable"
@@ -11098,6 +11567,12 @@ toolchain {
         flag: "-framework UIKit"
       }
     }
+  }
+  feature {
+    name: "link_cocoa"
+  }
+  feature {
+    name: "apply_simulator_compiler_flags"
   }
   feature {
     name: "unfiltered_cxx_flags"
@@ -11115,16 +11590,59 @@ toolchain {
     }
   }
   feature {
-    name: "cpp_linker_flags"
+    name: "copts"
     flag_set {
-      action: "c++-link-executable"
-      action: "c++-link-dynamic-library"
+      action: "assemble"
+      action: "preprocess-assemble"
+      action: "c-compile"
+      action: "c++-compile"
+      action: "c++-header-parsing"
+      action: "c++-header-preprocessing"
+      action: "c++-module-compile"
+      action: "c++-module-codegen"
+      action: "objc-compile"
+      action: "objc++-compile"
       flag_group {
-        flag: "-lc++"
-        flag: "-undefined"
-        flag: "dynamic_lookup"
-        flag: "-target"
-        flag: "arm64-apple-tvos"
+        flag: "%{copts}"
+        iterate_over: "copts"
+      }
+      expand_if_all_available: "copts"
+    }
+  }
+  action_config {
+    config_name: "strip"
+    action_name: "strip"
+    tool {
+      tool_path: "/usr/bin/strip"
+    }
+    flag_set {
+      flag_group {
+        flag: "-S"
+        flag: "-o"
+        flag: "%{output_file}"
+        flag: "-R"
+        flag: ".gnu.switches.text.quote_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.bracket_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.system_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_defines"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_includes"
+        flag: "-R"
+        flag: ".gnu.switches.text.cl_args"
+        flag: "-R"
+        flag: ".gnu.switches.text.lipo_info"
+        flag: "-R"
+        flag: ".gnu.switches.text.annotation"
+      }
+      flag_group {
+        flag: "%{stripopts}"
+        iterate_over: "stripopts"
+      }
+      flag_group {
+        flag: "%{input_file}"
       }
     }
   }
@@ -11135,6 +11653,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -11150,6 +11669,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -11165,6 +11685,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -11180,6 +11701,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -11195,6 +11717,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -11226,6 +11749,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
   }
   action_config {
     config_name: "objc++-compile"
@@ -11251,6 +11775,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
   }
   action_config {
     config_name: "assemble"
@@ -11259,6 +11784,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "include_system_dirs"
@@ -11272,6 +11798,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -11437,6 +11964,7 @@ toolchain {
     action_name: "c++-link-executable"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "symbol_counts"
     implies: "linkstamps"
@@ -11457,6 +11985,7 @@ toolchain {
     action_name: "c++-link-dynamic-library"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "has_configured_linker_path"
     implies: "symbol_counts"
@@ -11478,6 +12007,7 @@ toolchain {
     action_name: "c++-link-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -11491,6 +12021,7 @@ toolchain {
     action_name: "c++-link-alwayslink-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -11504,6 +12035,7 @@ toolchain {
     action_name: "c++-link-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -11517,6 +12049,7 @@ toolchain {
     action_name: "c++-link-alwayslink-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -12387,23 +12920,9 @@ toolchain {
   }
   feature {
     name: "bitcode_embedded"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode"
-      }
-    }
   }
   feature {
     name: "bitcode_embedded_markers"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode-marker"
-      }
-    }
   }
   feature {
     name: "objc_arc"
@@ -12548,6 +13067,9 @@ toolchain {
     }
   }
   feature {
+    name: "cpp_linker_flags"
+  }
+  feature {
     name: "apply_implicit_frameworks"
     flag_set {
       action: "objc-executable"
@@ -12558,6 +13080,72 @@ toolchain {
       }
     }
   }
+  feature {
+    name: "link_cocoa"
+  }
+  feature {
+    name: "apply_simulator_compiler_flags"
+  }
+  feature {
+    name: "unfiltered_cxx_flags"
+  }
+  feature {
+    name: "copts"
+    flag_set {
+      action: "assemble"
+      action: "preprocess-assemble"
+      action: "c-compile"
+      action: "c++-compile"
+      action: "c++-header-parsing"
+      action: "c++-header-preprocessing"
+      action: "c++-module-compile"
+      action: "c++-module-codegen"
+      action: "objc-compile"
+      action: "objc++-compile"
+      flag_group {
+        flag: "%{copts}"
+        iterate_over: "copts"
+      }
+      expand_if_all_available: "copts"
+    }
+  }
+  action_config {
+    config_name: "strip"
+    action_name: "strip"
+    tool {
+      tool_path: "/usr/bin/strip"
+    }
+    flag_set {
+      flag_group {
+        flag: "-S"
+        flag: "-o"
+        flag: "%{output_file}"
+        flag: "-R"
+        flag: ".gnu.switches.text.quote_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.bracket_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.system_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_defines"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_includes"
+        flag: "-R"
+        flag: ".gnu.switches.text.cl_args"
+        flag: "-R"
+        flag: ".gnu.switches.text.lipo_info"
+        flag: "-R"
+        flag: ".gnu.switches.text.annotation"
+      }
+      flag_group {
+        flag: "%{stripopts}"
+        iterate_over: "stripopts"
+      }
+      flag_group {
+        flag: "%{input_file}"
+      }
+    }
+  }
   action_config {
     config_name: "c-compile"
     action_name: "c-compile"
@@ -12565,6 +13153,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -12579,6 +13168,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -12593,6 +13183,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -12607,6 +13198,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -12621,6 +13213,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -12651,6 +13244,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
   }
   action_config {
     config_name: "objc++-compile"
@@ -12676,6 +13270,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
   }
   action_config {
     config_name: "assemble"
@@ -12684,6 +13279,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "include_system_dirs"
@@ -12696,6 +13292,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -12860,6 +13457,7 @@ toolchain {
     action_name: "c++-link-executable"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "symbol_counts"
     implies: "linkstamps"
@@ -12879,6 +13477,7 @@ toolchain {
     action_name: "c++-link-dynamic-library"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "has_configured_linker_path"
     implies: "symbol_counts"
@@ -12899,6 +13498,7 @@ toolchain {
     action_name: "c++-link-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -12912,6 +13512,7 @@ toolchain {
     action_name: "c++-link-alwayslink-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -12925,6 +13526,7 @@ toolchain {
     action_name: "c++-link-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -12938,6 +13540,7 @@ toolchain {
     action_name: "c++-link-alwayslink-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -13814,23 +14417,9 @@ toolchain {
   }
   feature {
     name: "bitcode_embedded"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode"
-      }
-    }
   }
   feature {
     name: "bitcode_embedded_markers"
-    flag_set {
-      action: "objc-compile"
-      action: "objc++-compile"
-      flag_group {
-        flag: "-fembed-bitcode-marker"
-      }
-    }
   }
   feature {
     name: "objc_arc"
@@ -13975,6 +14564,9 @@ toolchain {
     }
   }
   feature {
+    name: "cpp_linker_flags"
+  }
+  feature {
     name: "apply_implicit_frameworks"
     flag_set {
       action: "objc-executable"
@@ -13985,6 +14577,72 @@ toolchain {
       }
     }
   }
+  feature {
+    name: "link_cocoa"
+  }
+  feature {
+    name: "apply_simulator_compiler_flags"
+  }
+  feature {
+    name: "unfiltered_cxx_flags"
+  }
+  feature {
+    name: "copts"
+    flag_set {
+      action: "assemble"
+      action: "preprocess-assemble"
+      action: "c-compile"
+      action: "c++-compile"
+      action: "c++-header-parsing"
+      action: "c++-header-preprocessing"
+      action: "c++-module-compile"
+      action: "c++-module-codegen"
+      action: "objc-compile"
+      action: "objc++-compile"
+      flag_group {
+        flag: "%{copts}"
+        iterate_over: "copts"
+      }
+      expand_if_all_available: "copts"
+    }
+  }
+  action_config {
+    config_name: "strip"
+    action_name: "strip"
+    tool {
+      tool_path: "/usr/bin/strip"
+    }
+    flag_set {
+      flag_group {
+        flag: "-S"
+        flag: "-o"
+        flag: "%{output_file}"
+        flag: "-R"
+        flag: ".gnu.switches.text.quote_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.bracket_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.system_paths"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_defines"
+        flag: "-R"
+        flag: ".gnu.switches.text.cpp_includes"
+        flag: "-R"
+        flag: ".gnu.switches.text.cl_args"
+        flag: "-R"
+        flag: ".gnu.switches.text.lipo_info"
+        flag: "-R"
+        flag: ".gnu.switches.text.annotation"
+      }
+      flag_group {
+        flag: "%{stripopts}"
+        iterate_over: "stripopts"
+      }
+      flag_group {
+        flag: "%{input_file}"
+      }
+    }
+  }
   action_config {
     config_name: "c-compile"
     action_name: "c-compile"
@@ -13992,6 +14650,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -14006,6 +14665,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -14020,6 +14680,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -14034,6 +14695,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -14048,6 +14710,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -14078,6 +14741,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
   }
   action_config {
     config_name: "objc++-compile"
@@ -14103,6 +14767,7 @@ toolchain {
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "apple_env"
+    implies: "copts"
   }
   action_config {
     config_name: "assemble"
@@ -14111,6 +14776,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "objc_arc"
     implies: "no_objc_arc"
     implies: "include_system_dirs"
@@ -14123,6 +14789,7 @@ toolchain {
       tool_path: "wrapped_clang"
       execution_requirement: "requires-darwin"
     }
+    implies: "copts"
     implies: "preprocessor_defines"
     implies: "include_system_dirs"
     implies: "version_min"
@@ -14287,6 +14954,7 @@ toolchain {
     action_name: "c++-link-executable"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "symbol_counts"
     implies: "linkstamps"
@@ -14306,6 +14974,7 @@ toolchain {
     action_name: "c++-link-dynamic-library"
     tool {
       tool_path: "cc_wrapper.sh"
+      execution_requirement: "requires-darwin"
     }
     implies: "has_configured_linker_path"
     implies: "symbol_counts"
@@ -14326,6 +14995,7 @@ toolchain {
     action_name: "c++-link-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -14339,6 +15009,7 @@ toolchain {
     action_name: "c++-link-alwayslink-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -14352,6 +15023,7 @@ toolchain {
     action_name: "c++-link-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"
@@ -14365,6 +15037,7 @@ toolchain {
     action_name: "c++-link-alwayslink-pic-static-library"
     tool {
       tool_path: "wrapped_ar"
+      execution_requirement: "requires-darwin"
     }
     implies: "global_whole_archive_open"
     implies: "runtime_root_flags"

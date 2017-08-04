@@ -1196,7 +1196,7 @@ public class MethodLibrary {
         public Runtime.NoneType invoke(
             MutableList<Object> self, Object item, Location loc, Environment env)
             throws EvalException {
-          self.add(item, loc, env);
+          self.add(item, loc, env.mutability());
           return Runtime.NONE;
         }
       };
@@ -1219,7 +1219,7 @@ public class MethodLibrary {
         public Runtime.NoneType invoke(
             MutableList<Object> self, Integer index, Object item, Location loc, Environment env)
             throws EvalException {
-          self.add(EvalUtils.clampRangeEndpoint(index, self.size()), item, loc, env);
+          self.add(EvalUtils.clampRangeEndpoint(index, self.size()), item, loc, env.mutability());
           return Runtime.NONE;
         }
       };
@@ -1241,7 +1241,7 @@ public class MethodLibrary {
         public Runtime.NoneType invoke(
             MutableList<Object> self, SkylarkList<Object> items, Location loc, Environment env)
             throws EvalException {
-          self.addAll(items, loc, env);
+          self.addAll(items, loc, env.mutability());
           return Runtime.NONE;
         }
       };
@@ -1293,7 +1293,7 @@ public class MethodLibrary {
             throws EvalException {
           for (int i = 0; i < self.size(); i++) {
             if (self.get(i).equals(x)) {
-              self.remove(i, loc, env);
+              self.remove(i, loc, env.mutability());
               return Runtime.NONE;
             }
           }
@@ -1329,7 +1329,7 @@ public class MethodLibrary {
           int arg = i == Runtime.NONE ? -1 : (Integer) i;
           int index = EvalUtils.getSequenceIndex(arg, self.size(), loc);
           Object result = self.get(index);
-          self.remove(index, loc, env);
+          self.remove(index, loc, env.mutability());
           return result;
         }
       };
@@ -1581,7 +1581,7 @@ public class MethodLibrary {
   private static final BuiltinFunction tuple =
       new BuiltinFunction("tuple") {
         public Tuple<?> invoke(Object x, Location loc, Environment env) throws EvalException {
-          return Tuple.create(ImmutableList.copyOf(EvalUtils.toCollection(x, loc, env)));
+          return Tuple.copyOf(EvalUtils.toCollection(x, loc, env));
         }
       };
 
@@ -1636,7 +1636,8 @@ public class MethodLibrary {
     returnType = String.class,
     doc =
         "Converts any object to string. This is useful for debugging."
-            + "<pre class=\"language-python\">str(\"ab\") == \"ab\"</pre>",
+            + "<pre class=\"language-python\">str(\"ab\") == \"ab\"\n"
+            + "str(8) == \"8\"</pre>",
     parameters = {@Param(name = "x", doc = "The object to convert.")},
     useEnvironment = true
   )
@@ -1652,7 +1653,7 @@ public class MethodLibrary {
     returnType = String.class,
     doc =
         "Converts any object to a string representation. This is useful for debugging.<br>"
-            + "<pre class=\"language-python\">str(\"ab\") == \"\\\"ab\\\"\"</pre>",
+            + "<pre class=\"language-python\">repr(\"ab\") == '\"ab\"'</pre>",
     parameters = {@Param(name = "x", doc = "The object to convert.")},
     useEnvironment = true
   )

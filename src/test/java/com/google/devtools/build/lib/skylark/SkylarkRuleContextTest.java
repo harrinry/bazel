@@ -27,7 +27,7 @@ import com.google.devtools.build.lib.analysis.FileConfiguredTarget;
 import com.google.devtools.build.lib.analysis.TransitiveInfoCollection;
 import com.google.devtools.build.lib.analysis.actions.SpawnAction;
 import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.packages.SkylarkClassObject;
+import com.google.devtools.build.lib.packages.Info;
 import com.google.devtools.build.lib.rules.SkylarkRuleContext;
 import com.google.devtools.build.lib.rules.java.JavaProvider;
 import com.google.devtools.build.lib.rules.java.JavaSourceJarsProvider;
@@ -642,7 +642,7 @@ public class SkylarkRuleContextTest extends SkylarkTestCase {
   public void testGetExecutablePrerequisite() throws Exception {
     SkylarkRuleContext ruleContext = createRuleContext("//foo:androidlib");
     Object result = evalRuleContextCode(ruleContext, "ruleContext.executable._jarjar_bin");
-    assertThat(((Artifact) result).getFilename()).matches("^jarjar_bin(\\.cmd){0,1}$");
+    assertThat(((Artifact) result).getFilename()).matches("^jarjar_bin(\\.exe){0,1}$");
   }
 
   @Test
@@ -659,7 +659,7 @@ public class SkylarkRuleContextTest extends SkylarkTestCase {
         (SpawnAction)
             Iterables.getOnlyElement(
                 ruleContext.getRuleContext().getAnalysisEnvironment().getRegisteredActions());
-    assertThat(action.getCommandFilename()).matches("^.*/jarjar_bin(\\.cmd){0,1}$");
+    assertThat(action.getCommandFilename()).matches("^.*/jarjar_bin(\\.exe){0,1}$");
   }
 
   @Test
@@ -1524,9 +1524,8 @@ public class SkylarkRuleContextTest extends SkylarkTestCase {
     SkylarkRuleContext ruleContext = createRuleContext("//test:testing");
 
     Object provider = evalRuleContextCode(ruleContext, "ruleContext.attr.dep[Actions]");
-    assertThat(provider).isInstanceOf(SkylarkClassObject.class);
-    assertThat(((SkylarkClassObject) provider).getConstructor())
-        .isEqualTo(ActionsProvider.SKYLARK_CONSTRUCTOR);
+    assertThat(provider).isInstanceOf(Info.class);
+    assertThat(((Info) provider).getProvider()).isEqualTo(ActionsProvider.SKYLARK_CONSTRUCTOR);
     update("actions", provider);
 
     Object mapping = eval("actions.by_file");

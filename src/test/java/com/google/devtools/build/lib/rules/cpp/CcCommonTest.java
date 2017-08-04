@@ -43,7 +43,7 @@ import com.google.devtools.build.lib.cmdline.PackageIdentifier;
 import com.google.devtools.build.lib.cmdline.RepositoryName;
 import com.google.devtools.build.lib.packages.RuleClass;
 import com.google.devtools.build.lib.rules.ToolchainType;
-import com.google.devtools.build.lib.testutil.MoreAsserts;
+import com.google.devtools.build.lib.rules.core.CoreRules;
 import com.google.devtools.build.lib.util.FileType;
 import com.google.devtools.build.lib.util.OsUtils;
 import com.google.devtools.build.lib.vfs.FileSystemUtils;
@@ -149,7 +149,7 @@ public class CcCommonTest extends BuildViewTestCase {
         "cc_library(name = 'c_lib',",
         "    srcs = ['foo.cc'],",
         "    copts = [ '-Wmy-warning', '-frun-faster' ])");
-    MoreAsserts.assertContainsSublist(getCopts("//copts:c_lib"), "-Wmy-warning", "-frun-faster");
+    assertThat(getCopts("//copts:c_lib")).containsAllOf("-Wmy-warning", "-frun-faster");
   }
 
   @Test
@@ -160,7 +160,7 @@ public class CcCommonTest extends BuildViewTestCase {
         "    srcs = ['foo.cc'],",
         "    copts = ['-Wmy-warning -frun-faster'])");
     List<String> copts = getCopts("//copts:c_lib");
-    MoreAsserts.assertContainsSublist(copts, "-Wmy-warning", "-frun-faster");
+    assertThat(copts).containsAllOf("-Wmy-warning", "-frun-faster");
     assertContainsEvent("each item in the list should contain only one option");
   }
 
@@ -173,7 +173,7 @@ public class CcCommonTest extends BuildViewTestCase {
         "    srcs = ['foo.cc'],",
         "    copts = ['-Wmy-warning -frun-faster'])");
     List<String> copts = getCopts("//copts:c_lib");
-    MoreAsserts.assertContainsSublist(copts, "-Wmy-warning -frun-faster");
+    assertThat(copts).contains("-Wmy-warning -frun-faster");
   }
 
   /**
@@ -983,7 +983,7 @@ public class CcCommonTest extends BuildViewTestCase {
           ConfiguredRuleClassProvider.Builder builder = new ConfiguredRuleClassProvider.Builder();
           builder.setToolsRepository("@bazel_tools");
           BazelRuleClassProvider.BAZEL_SETUP.init(builder);
-          BazelRuleClassProvider.CORE_RULES.init(builder);
+          CoreRules.INSTANCE.init(builder);
           BazelRuleClassProvider.CORE_WORKSPACE_RULES.init(builder);
           BazelRuleClassProvider.GENERIC_RULES.init(builder);
           BazelRuleClassProvider.CPP_RULES.init(builder);

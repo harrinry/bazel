@@ -39,6 +39,7 @@ filegroup(
         "//src/main/java/com/google/devtools/build/lib/rules/objc:srcs",
         "//src/main/java/com/google/devtools/build/lib/analysis/featurecontrol:srcs",
         "//src/main/java/com/google/devtools/build/lib/analysis/platform:srcs",
+        "//src/main/java/com/google/devtools/build/lib/analysis/whitelisting:srcs",
         "//src/main/java/com/google/devtools/build/lib/rules/platform:srcs",
         "//src/main/java/com/google/devtools/build/lib/sandbox:srcs",
         "//src/main/java/com/google/devtools/build/lib/ssd:srcs",
@@ -390,7 +391,7 @@ java_library(
 
 java_library(
     name = "auth_and_tls_options",
-    srcs = ["authandtls/AuthAndTLSOptions.java"],
+    srcs = glob(["authandtls/*.java"]),
     visibility = [
         "//src/main/java/com/google/devtools/build/lib/remote:__pkg__",
         "//src/test/java/com/google/devtools/build/lib:__pkg__",
@@ -400,6 +401,13 @@ java_library(
     ],
     deps = [
         "//src/main/java/com/google/devtools/common/options",
+        "//third_party:apache_httpclient",
+        "//third_party:apache_httpcore",
+        "//third_party:auth",
+        "//third_party:guava",
+        "//third_party:jsr305",
+        "//third_party:netty",
+        "//third_party/grpc:grpc-jar",
     ],
 )
 
@@ -691,6 +699,7 @@ java_library(
         ":buildeventstream",
         ":collect",
         ":concurrent",
+        ":core-rules",
         ":events",
         ":java-compilation",
         ":java-rules",
@@ -931,6 +940,7 @@ java_library(
         "rules/java/proto/JavaProtoLibrary.java",
         "rules/java/proto/JavaProtoLibraryAspectProvider.java",
         "rules/java/proto/JavaProtoSkylarkCommon.java",
+        "rules/java/proto/JplCcLinkParams.java",
         "rules/java/proto/ProtoJavacOpts.java",
         "rules/java/proto/StrictDepsUtils.java",
     ],
@@ -970,6 +980,7 @@ java_library(
         ":packages-internal",
         ":proto-rules",
         "//src/main/java/com/google/devtools/build/lib/actions",
+        "//third_party:guava",
     ],
 )
 
@@ -1046,6 +1057,19 @@ java_library(
 java_library(
     name = "java-implicit-attributes",
     srcs = ["rules/java/JavaImplicitAttributes.java"],
+)
+
+java_library(
+    name = "core-rules",
+    srcs = glob(
+        ["rules/core/*.java"],
+    ),
+    deps = [
+        ":build-base",
+        "//src/main/java/com/google/devtools/build/lib/analysis/featurecontrol",
+        "//src/main/java/com/google/devtools/build/lib/rules/config",
+        "//third_party:guava",
+    ],
 )
 
 java_library(

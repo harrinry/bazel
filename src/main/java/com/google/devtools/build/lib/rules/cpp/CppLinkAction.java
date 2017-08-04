@@ -58,7 +58,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import javax.annotation.Nullable;
 
 /** 
@@ -113,10 +112,10 @@ public final class CppLinkAction extends AbstractAction
 
   /** True for cc_fake_binary targets. */
   private final boolean fake;
-  private final boolean isLTOIndexing;
+  private final boolean isLtoIndexing;
 
   // This is set for both LTO indexing and LTO linking.
-  @Nullable private final Iterable<LTOBackendArtifacts> allLTOBackendArtifacts;
+  @Nullable private final Iterable<LtoBackendArtifacts> allLtoBackendArtifacts;
   private final Iterable<Artifact> mandatoryInputs;
 
   // Linking uses a lot of memory; estimate 1 MB per input file, min 1.5 Gib.
@@ -153,8 +152,8 @@ public final class CppLinkAction extends AbstractAction
       Artifact linkOutput,
       LibraryToLink interfaceOutputLibrary,
       boolean fake,
-      boolean isLTOIndexing,
-      Iterable<LTOBackendArtifacts> allLTOBackendArtifacts,
+      boolean isLtoIndexing,
+      Iterable<LtoBackendArtifacts> allLtoBackendArtifacts,
       LinkCommandLine linkCommandLine,
       ImmutableSet<String> clientEnvironmentVariables,
       ImmutableMap<String, String> actionEnv,
@@ -162,7 +161,7 @@ public final class CppLinkAction extends AbstractAction
       ImmutableSet<String> executionRequirements) {
     super(owner, inputs, outputs);
     if (mnemonic == null) {
-      this.mnemonic = (isLTOIndexing) ? "CppLTOIndexing" : "CppLink";
+      this.mnemonic = (isLtoIndexing) ? "CppLTOIndexing" : "CppLink";
     } else {
       this.mnemonic = mnemonic;
     }
@@ -172,8 +171,8 @@ public final class CppLinkAction extends AbstractAction
     this.linkOutput = linkOutput;
     this.interfaceOutputLibrary = interfaceOutputLibrary;
     this.fake = fake;
-    this.isLTOIndexing = isLTOIndexing;
-    this.allLTOBackendArtifacts = allLTOBackendArtifacts;
+    this.isLtoIndexing = isLtoIndexing;
+    this.allLtoBackendArtifacts = allLtoBackendArtifacts;
     this.linkCommandLine = linkCommandLine;
     this.clientEnvironmentVariables = clientEnvironmentVariables;
     this.actionEnv = actionEnv;
@@ -212,7 +211,7 @@ public final class CppLinkAction extends AbstractAction
     result.putAll(actionEnv);
     result.putAll(toolchainEnv);
 
-    if (!needsToRunOnMac()) {
+    if (!executionRequirements.contains(ExecutionRequirements.REQUIRES_DARWIN)) {
       // This prevents gcc from writing the unpredictable (and often irrelevant)
       // value of getcwd() into the debug info.
       result.put("PWD", "/proc/self/cwd");
@@ -258,7 +257,7 @@ public final class CppLinkAction extends AbstractAction
   }
 
   @Override
-  public Map<String, String> getExecutionInfo() {
+  public ImmutableMap<String, String> getExecutionInfo() {
     ImmutableMap.Builder<String, String> result = ImmutableMap.<String, String>builder();
     for (String requirement : executionRequirements) {
       result.put(requirement, "");
@@ -291,12 +290,8 @@ public final class CppLinkAction extends AbstractAction
     return linkCommandLine.getCommandLine();
   }
 
-  Iterable<LTOBackendArtifacts> getAllLTOBackendArtifacts() {
-    return allLTOBackendArtifacts;
-  }
-
-  private boolean needsToRunOnMac() {
-    return getHostSystemName().equals(CppConfiguration.MAC_SYSTEM_NAME);
+  Iterable<LtoBackendArtifacts> getAllLtoBackendArtifacts() {
+    return allLtoBackendArtifacts;
   }
 
   @Override
@@ -312,16 +307,11 @@ public final class CppLinkAction extends AbstractAction
         Artifact.addExpandedArtifacts(
             getMandatoryInputs(), allInputs, actionExecutionContext.getArtifactExpander());
 
-        ImmutableMap<String, String> executionInfo = ImmutableMap.of();
-        if (needsToRunOnMac()) {
-          executionInfo = ImmutableMap.of(ExecutionRequirements.REQUIRES_DARWIN, "");
-        }
-
         Spawn spawn = new SimpleSpawn(
             this,
             ImmutableList.copyOf(getCommandLine()),
             getEnvironment(),
-            executionInfo,
+            getExecutionInfo(),
             ImmutableList.copyOf(allInputs),
             getOutputs().asList(),
             estimateResourceConsumptionLocal());
@@ -468,7 +458,7 @@ public final class CppLinkAction extends AbstractAction
     if (linkCommandLine.getRuntimeSolibDir() != null) {
       f.addPath(linkCommandLine.getRuntimeSolibDir());
     }
-    f.addBoolean(isLTOIndexing);
+    f.addBoolean(isLtoIndexing);
     return f.hexDigestAndReset();
   }
 
@@ -500,7 +490,7 @@ public final class CppLinkAction extends AbstractAction
 
   @Override
   protected String getRawProgressMessage() {
-    return (isLTOIndexing ? "LTO indexing " : "Linking ") + linkOutput.prettyPrint();
+    return (isLtoIndexing ? "LTO indexing " : "Linking ") + linkOutput.prettyPrint();
   }
 
   /**

@@ -15,18 +15,14 @@ package com.google.devtools.build.android;
 
 import static com.google.common.truth.Truth.assertThat;
 
-import com.google.common.base.Joiner;
 import com.google.devtools.build.android.Converters.ExistingPathConverter;
-import com.google.devtools.build.android.Converters.ExistingPathListConverter;
 import com.google.devtools.build.android.Converters.ExistingPathStringDictionaryConverter;
 import com.google.devtools.build.android.Converters.PathConverter;
 import com.google.devtools.build.android.Converters.PathListConverter;
 import com.google.devtools.build.android.Converters.StringDictionaryConverter;
 import com.google.devtools.common.options.OptionsParsingException;
-import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.List;
 import java.util.Map;
 import org.junit.Rule;
 import org.junit.Test;
@@ -40,8 +36,6 @@ import org.junit.runners.JUnit4;
  */
 @RunWith(JUnit4.class)
 public final class ConvertersTest {
-
-  private static final String SEPARATOR = File.pathSeparator;
 
   @Rule public final TemporaryFolder tmp = new TemporaryFolder();
 
@@ -91,21 +85,9 @@ public final class ConvertersTest {
   @Test
   public void testPathListConverter() throws Exception {
     PathListConverter converter = new PathListConverter();
-    List<Path> result =
-        converter.convert("foo" + SEPARATOR + "bar" + SEPARATOR + SEPARATOR + "baz" + SEPARATOR);
-    assertThat(result)
+    assertThat(converter.convert("foo:bar::baz:"))
         .containsAllOf(Paths.get("foo"), Paths.get("bar"), Paths.get("baz"))
         .inOrder();
-  }
-
-  @Test
-  public void testExisingPathListConverter() throws Exception {
-    String arg = "non-existing";
-    ExistingPathListConverter converter = new ExistingPathListConverter();
-    Path existingFile = tmp.newFile("existing").toPath();
-    expected.expect(OptionsParsingException.class);
-    expected.expectMessage(String.format("%s is not a valid path: it does not exist.", arg));
-    converter.convert(Joiner.on(SEPARATOR).join(existingFile.toString(), arg));
   }
 
   @Test

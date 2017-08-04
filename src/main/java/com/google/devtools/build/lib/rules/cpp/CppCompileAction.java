@@ -121,6 +121,9 @@ public class CppCompileAction extends AbstractAction
   public static final java.lang.String CC_FLAGS_MAKE_VARIABLE_ACTION_NAME =
       "cc-flags-make-variable";
 
+  /** A string constant for the strip action name. */
+  public static final String STRIP_ACTION_NAME = "strip";
+
   /**
    * A string constant for the c compilation action.
    */
@@ -267,7 +270,6 @@ public class CppCompileAction extends AbstractAction
    * @param cppConfiguration TODO(bazel-team): Add parameter description.
    * @param context the compilation context
    * @param actionContext TODO(bazel-team): Add parameter description.
-   * @param copts options for the compiler
    * @param coptsFilter regular expression to remove options from {@code copts}
    * @param specialInputsHandler TODO(bazel-team): Add parameter description.
    * @param lipoScannables List of artifacts to include-scan when this action is a lipo action
@@ -305,7 +307,6 @@ public class CppCompileAction extends AbstractAction
       CppConfiguration cppConfiguration,
       CppCompilationContext context,
       Class<? extends CppCompileActionContext> actionContext,
-      ImmutableList<String> copts,
       Predicate<String> coptsFilter,
       SpecialInputsHandler specialInputsHandler,
       Iterable<IncludeScannable> lipoScannables,
@@ -349,7 +350,6 @@ public class CppCompileAction extends AbstractAction
                 sourceFile,
                 outputFile,
                 sourceLabel,
-                copts,
                 coptsFilter,
                 features,
                 actionName,
@@ -441,7 +441,8 @@ public class CppCompileAction extends AbstractAction
     return discoversInputs;
   }
 
-  @VisibleForTesting  // productionVisibility = Visibility.PRIVATE
+  @Override
+  @VisibleForTesting // productionVisibility = Visibility.PRIVATE
   public Iterable<Artifact> getPossibleInputsForTesting() {
     return Iterables.concat(getInputs(), prunableInputs);
   }

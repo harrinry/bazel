@@ -19,7 +19,7 @@ import unittest
 from src.test.py.bazel import test_base
 
 
-class LauncherScriptTest(test_base.TestBase):
+class LauncherTest(test_base.TestBase):
 
   def testJavaBinaryLauncher(self):
     self.ScratchFile('WORKSPACE')
@@ -35,6 +35,12 @@ class LauncherScriptTest(test_base.TestBase):
         'public class Main {',
         '  public static void main(String[] args) {'
         '    System.out.println("hello java");',
+        '    System.out.println("java_runfiles=" + ',
+        '        System.getenv("JAVA_RUNFILES"));',
+        '    System.out.println("runfiles_manifest_only=" + ',
+        '        System.getenv("RUNFILES_MANIFEST_ONLY"));',
+        '    System.out.println("runfiles_manifest_file=" + ',
+        '        System.getenv("RUNFILES_MANIFEST_FILE"));',
         '  }',
         '}',
     ])
@@ -65,7 +71,98 @@ class LauncherScriptTest(test_base.TestBase):
 
     exit_code, stdout, stderr = self.RunProgram([main_binary])
     self.AssertExitCode(exit_code, 0, stderr)
+    self.assertEqual(len(stdout), 4)
     self.assertEqual(stdout[0], 'hello java')
+    if self.IsWindows():
+      self.assertRegexpMatches(stdout[1], r'java_runfiles=.*foo\\foo.runfiles')
+      self.assertEqual(stdout[2], 'runfiles_manifest_only=1')
+      self.assertRegexpMatches(stdout[3], r'^runfiles_manifest_file.*MANIFEST$')
+    else:
+      self.assertRegexpMatches(stdout[1], r'java_runfiles=.*/foo/foo.runfiles')
+      self.assertEqual(stdout[2], 'runfiles_manifest_only=')
+      self.assertRegexpMatches(stdout[3], r'^runfiles_manifest_file.*MANIFEST$')
+
+  def _buildShBinaryTargets(self, bazel_bin, launcher_flag, bin1_suffix):
+    exit_code, _, stderr = self.RunBazel(['build', '//foo:bin1.sh'] +
+                                         launcher_flag)
+    self.AssertExitCode(exit_code, 0, stderr)
+
+    bin1 = os.path.join(bazel_bin, 'foo', 'bin1.sh.%s' % bin1_suffix
+                        if self.IsWindows() else 'bin1.sh')
+
+    self.assertTrue(os.path.exists(bin1))
+    self.assertTrue(
+        os.path.isdir(os.path.join(bazel_bin, 'foo/bin1.sh.runfiles')))
+
+    exit_code, _, stderr = self.RunBazel(['build', '//foo:bin2.cmd'] +
+                                         launcher_flag)
+    self.AssertExitCode(exit_code, 0, stderr)
+
+    bin2 = os.path.join(bazel_bin, 'foo/bin2.cmd')
+    self.assertTrue(os.path.exists(bin2))
+    self.assertTrue(
+        os.path.isdir(os.path.join(bazel_bin, 'foo/bin2.cmd.runfiles')))
+
+    exit_code, _, stderr = self.RunBazel(['build', '//foo:bin3.bat'] +
+                                         launcher_flag)
+    if self.IsWindows():
+      self.AssertExitCode(exit_code, 1, stderr)
+      self.assertIn('target name extension should match source file extension.',
+                    os.linesep.join(stderr))
+    else:
+      bin3 = os.path.join(bazel_bin, 'foo', 'bin3.bat')
+      self.assertTrue(os.path.exists(bin3))
+      self.assertTrue(
+          os.path.isdir(os.path.join(bazel_bin, 'foo/bin3.bat.runfiles')))
+
+    if self.IsWindows():
+      self.assertTrue(os.path.isfile(bin1))
+      self.assertTrue(os.path.isfile(bin2))
+    else:
+      self.assertTrue(os.path.islink(bin1))
+      self.assertTrue(os.path.islink(bin2))
+      self.assertTrue(os.path.islink(bin3))
+
+    if self.IsWindows():
+      self.AssertRunfilesManifestContains(
+          os.path.join(bazel_bin, 'foo/bin1.sh.runfiles/MANIFEST'),
+          '__main__/bar/bar.txt')
+      self.AssertRunfilesManifestContains(
+          os.path.join(bazel_bin, 'foo/bin2.cmd.runfiles/MANIFEST'),
+          '__main__/bar/bar.txt')
+    else:
+      self.assertTrue(
+          os.path.islink(
+              os.path.join(bazel_bin,
+                           'foo/bin1.sh.runfiles/__main__/bar/bar.txt')))
+      self.assertTrue(
+          os.path.islink(
+              os.path.join(bazel_bin,
+                           'foo/bin2.cmd.runfiles/__main__/bar/bar.txt')))
+      self.assertTrue(
+          os.path.islink(
+              os.path.join(bazel_bin,
+                           'foo/bin3.bat.runfiles/__main__/bar/bar.txt')))
+
+    exit_code, stdout, stderr = self.RunProgram([bin1])
+    self.AssertExitCode(exit_code, 0, stderr)
+    self.assertEqual(len(stdout), 3)
+    self.assertEqual(stdout[0], 'hello shell')
+    if self.IsWindows():
+      self.assertEqual(stdout[1], 'runfiles_manifest_only=1')
+      self.assertRegexpMatches(stdout[2], r'^runfiles_manifest_file.*MANIFEST$')
+    else:
+      # TODO(laszlocsomor): Find out whether the runfiles-related envvars should
+      # be set on Linux (e.g. $RUNFILES, $RUNFILES_MANIFEST_FILE). Currently
+      # they aren't, and that may be a bug. If it's indeed a bug, fix that bug
+      # and update this test.
+      self.assertEqual(stdout[1], 'runfiles_manifest_only=')
+      self.assertEqual(stdout[2], 'runfiles_manifest_file=')
+
+    if self.IsWindows():
+      exit_code, stdout, stderr = self.RunProgram([bin2])
+      self.AssertExitCode(exit_code, 0, stderr)
+      self.assertEqual(stdout[0], 'hello batch')
 
   def testShBinaryLauncher(self):
     self.ScratchFile('WORKSPACE')
@@ -75,13 +172,9 @@ class LauncherScriptTest(test_base.TestBase):
             # On Linux/MacOS, all sh_binary rules generate an output file with
             # the same name as the rule, and this is a symlink to the file in
             # `srcs`. (Bazel allows only one file in `sh_binary.srcs`.)
-            # On Windows, if the rule's name and the srcs's name end with the
-            # same extension, and this extension is one of ".exe", ".cmd", or
-            # ".bat", then sh_binary makes a copy of the output file, with the
-            # same name as the rule. Otherwise (if the rule's name doesn't end
-            # with such an extension, or the extension of it doesn't match the
-            # main file's) then Bazel creates a %{rulename}.cmd output which is
-            # a similar launcher script to that generated by java_binary rules.
+            # On Windows, if the srcs's extension is one of ".exe", ".cmd", or
+            # ".bat", then Bazel requires the rule's name has the same
+            # extension, and the output file will be a copy of the source file.
             'sh_binary(',
             '  name = "bin1.sh",',
             '  srcs = ["foo.sh"],',
@@ -101,6 +194,8 @@ class LauncherScriptTest(test_base.TestBase):
     foo_sh = self.ScratchFile('foo/foo.sh', [
         '#!/bin/bash',
         'echo hello shell',
+        'echo runfiles_manifest_only=${RUNFILES_MANIFEST_ONLY:-}',
+        'echo runfiles_manifest_file=${RUNFILES_MANIFEST_FILE:-}',
     ])
     foo_cmd = self.ScratchFile('foo/foo.cmd', ['@echo hello batch'])
     self.ScratchFile('bar/BUILD', ['exports_files(["bar.txt"])'])
@@ -112,71 +207,47 @@ class LauncherScriptTest(test_base.TestBase):
     self.AssertExitCode(exit_code, 0, stderr)
     bazel_bin = stdout[0]
 
-    exit_code, _, stderr = self.RunBazel(['build', '//foo:all'])
+    self._buildShBinaryTargets(bazel_bin, ['--windows_exe_launcher=0'], 'cmd')
+    self._buildShBinaryTargets(bazel_bin, [], 'exe')
+
+  def testShBinaryArgumentPassing(self):
+    self.ScratchFile('WORKSPACE')
+    self.ScratchFile('foo/BUILD', [
+        'sh_binary(',
+        '  name = "bin",',
+        '  srcs = ["bin.sh"],',
+        ')',
+    ])
+    foo_sh = self.ScratchFile('foo/bin.sh', [
+        '#!/bin/bash',
+        '# Store arguments in a array',
+        'args=("$@")',
+        '# Get the number of arguments',
+        'N=${#args[@]}',
+        '# Echo each argument',
+        'for (( i=0;i<$N;i++)); do',
+        ' echo ${args[${i}]}',
+        'done',
+    ])
+    os.chmod(foo_sh, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+
+    exit_code, stdout, stderr = self.RunBazel(['info', 'bazel-bin'])
+    self.AssertExitCode(exit_code, 0, stderr)
+    bazel_bin = stdout[0]
+
+    exit_code, _, stderr = self.RunBazel(
+        ['build', '--windows_exe_launcher', '//foo:bin'])
     self.AssertExitCode(exit_code, 0, stderr)
 
-    bin1 = os.path.join(bazel_bin, 'foo', 'bin1.sh.cmd'
-                        if self.IsWindows() else 'bin1.sh')
+    bin1 = os.path.join(bazel_bin, 'foo', 'bin.exe'
+                        if self.IsWindows() else 'bin')
     self.assertTrue(os.path.exists(bin1))
-    self.assertTrue(
-        os.path.isdir(os.path.join(bazel_bin, 'foo/bin1.sh.runfiles')))
+    self.assertTrue(os.path.isdir(os.path.join(bazel_bin, 'foo/bin.runfiles')))
 
-    bin2 = os.path.join(bazel_bin, 'foo/bin2.cmd')
-    self.assertTrue(os.path.exists(bin2))
-    self.assertTrue(
-        os.path.isdir(os.path.join(bazel_bin, 'foo/bin2.cmd.runfiles')))
-
-    bin3 = os.path.join(bazel_bin, 'foo', 'bin3.bat.cmd'
-                        if self.IsWindows() else 'bin3.bat')
-    self.assertTrue(os.path.exists(bin3))
-    self.assertTrue(
-        os.path.isdir(os.path.join(bazel_bin, 'foo/bin3.bat.runfiles')))
-
-    if self.IsWindows():
-      self.assertTrue(os.path.isfile(bin1))
-      self.assertTrue(os.path.isfile(bin2))
-      self.assertTrue(os.path.isfile(bin3))
-    else:
-      self.assertTrue(os.path.islink(bin1))
-      self.assertTrue(os.path.islink(bin2))
-      self.assertTrue(os.path.islink(bin3))
-
-    if self.IsWindows():
-      self.AssertRunfilesManifestContains(
-          os.path.join(bazel_bin, 'foo/bin1.sh.runfiles/MANIFEST'),
-          '__main__/bar/bar.txt')
-      self.AssertRunfilesManifestContains(
-          os.path.join(bazel_bin, 'foo/bin2.cmd.runfiles/MANIFEST'),
-          '__main__/bar/bar.txt')
-      self.AssertRunfilesManifestContains(
-          os.path.join(bazel_bin, 'foo/bin3.bat.runfiles/MANIFEST'),
-          '__main__/bar/bar.txt')
-    else:
-      self.assertTrue(
-          os.path.islink(
-              os.path.join(bazel_bin,
-                           'foo/bin1.sh.runfiles/__main__/bar/bar.txt')))
-      self.assertTrue(
-          os.path.islink(
-              os.path.join(bazel_bin,
-                           'foo/bin2.cmd.runfiles/__main__/bar/bar.txt')))
-      self.assertTrue(
-          os.path.islink(
-              os.path.join(bazel_bin,
-                           'foo/bin3.bat.runfiles/__main__/bar/bar.txt')))
-
-    exit_code, stdout, stderr = self.RunProgram([bin1])
+    arguments = ['a', 'a b', '"b"', 'C:\\a\\b\\', '"C:\\a b\\c\\"']
+    exit_code, stdout, stderr = self.RunProgram([bin1] + arguments)
     self.AssertExitCode(exit_code, 0, stderr)
-    self.assertEqual(stdout[0], 'hello shell')
-
-    if self.IsWindows():
-      exit_code, stdout, stderr = self.RunProgram([bin2])
-      self.AssertExitCode(exit_code, 0, stderr)
-      self.assertEqual(stdout[0], 'hello batch')
-
-      exit_code, stdout, stderr = self.RunProgram([bin3])
-      self.AssertExitCode(exit_code, 0, stderr)
-      self.assertEqual(stdout[0], 'hello batch')
+    self.assertEqual(stdout, arguments)
 
   def testPyBinaryLauncher(self):
     self.ScratchFile('WORKSPACE')
@@ -220,7 +291,7 @@ class LauncherScriptTest(test_base.TestBase):
         '  with open(sys.argv[1], "w") as f:',
         '    f.write("Hello World!")',
         'else:',
-        '  print "Hello World!"',
+        '  print("Hello World!")',
     ])
     self.ScratchFile('bar/BUILD', ['exports_files(["bar.txt"])'])
     self.ScratchFile('bar/bar.txt', ['hello'])

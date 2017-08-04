@@ -875,19 +875,6 @@ public final class BuildConfiguration implements BuildEvent {
     public List<String> testArguments;
 
     @Option(
-      name = "test_filter",
-      allowMultiple = false,
-      defaultValue = "null",
-      category = "testing",
-      documentationCategory = OptionDocumentationCategory.UNCATEGORIZED,
-      effectTags = {OptionEffectTag.UNKNOWN},
-      help =
-          "Specifies a filter to forward to the test framework.  Used to limit "
-              + "the tests run. Note that this does not affect which targets are built."
-    )
-    public String testFilter;
-
-    @Option(
       name = "check_fileset_dependencies_recursively",
       defaultValue = "true",
       category = "semantics",
@@ -1142,6 +1129,17 @@ public final class BuildConfiguration implements BuildEvent {
     )
     public TriState buildPythonZip;
 
+    @Option(
+      name = "windows_exe_launcher",
+      defaultValue = "true",
+      documentationCategory = OptionDocumentationCategory.UNDOCUMENTED,
+      effectTags = {OptionEffectTag.UNKNOWN},
+      help =
+          "Build a Windows exe launcher for sh_binary rule, "
+              + "it has no effect on other platforms than Windows"
+    )
+    public boolean windowsExeLauncher;
+
     @Override
     public FragmentOptions getHost(boolean fallback) {
       Options host = (Options) getDefault();
@@ -1152,6 +1150,7 @@ public final class BuildConfiguration implements BuildEvent {
       host.useDynamicConfigurations = useDynamicConfigurations;
       host.enableRunfiles = enableRunfiles;
       host.buildPythonZip = buildPythonZip;
+      host.windowsExeLauncher = windowsExeLauncher;
       host.commandLineBuildVariables = commandLineBuildVariables;
       host.enforceConstraints = enforceConstraints;
       host.separateGenfilesDirectory = separateGenfilesDirectory;
@@ -2539,10 +2538,6 @@ public final class BuildConfiguration implements BuildEvent {
     return options.testArguments;
   }
 
-  public String getTestFilter() {
-    return options.testFilter;
-  }
-
   /**
    * Returns user-specified test environment variables and their values, as set by the --test_env
    * options.
@@ -2726,6 +2721,10 @@ public final class BuildConfiguration implements BuildEvent {
       default:
         return OS.getCurrent() == OS.WINDOWS;
     }
+  }
+
+  public boolean enableWindowsExeLauncher() {
+    return options.windowsExeLauncher;
   }
 
   /**

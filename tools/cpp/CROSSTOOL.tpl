@@ -314,12 +314,6 @@ toolchain {
     }
   }
 
-  # Stop adding any flag for dotD file, Bazel knows how to parse the output of /showIncludes option
-  # TODO(bazel-team): Remove this empty feature. https://github.com/bazelbuild/bazel/issues/2868
-  feature {
-    name: 'dependency_file'
-  }
-
   # Tell Bazel to parse the output of /showIncludes
   feature {
     name: 'parse_showincludes'
@@ -337,14 +331,30 @@ toolchain {
     }
   }
 
-  # Stop passing -frandom-seed option
-  feature {
-    name: 'random_seed'
-  }
-
   # This feature is just for enabling flag_set in action_config for -c and -o options during the transitional period
   feature {
     name: 'compile_action_flags_in_flag_set'
+  }
+
+  feature {
+    name: "preprocessor_defines"
+    flag_set {
+      action: "preprocess-assemble"
+      action: "c-compile"
+      action: "c++-compile"
+      action: "c++-header-parsing"
+      action: "c++-header-preprocessing"
+      action: "c++-module-compile"
+      flag_group {
+        flag: "/D%{preprocessor_defines}"
+        iterate_over: "preprocessor_defines"
+      }
+    }
+  }
+
+  # This feature indicates strip is not supported, building stripped binary will just result a copy of orignial binary
+  feature {
+    name: 'no_stripping'
   }
 
   action_config {
@@ -381,6 +391,7 @@ toolchain {
     implies: 'nologo'
     implies: 'msvc_env'
     implies: 'parse_showincludes'
+    implies: 'copts'
   }
 
   action_config {
@@ -417,6 +428,7 @@ toolchain {
     implies: 'nologo'
     implies: 'msvc_env'
     implies: 'parse_showincludes'
+    implies: 'copts'
   }
 
   action_config {
@@ -434,6 +446,7 @@ toolchain {
     implies: 'linker_param_file'
     implies: 'msvc_env'
     implies: 'use_linker'
+    implies: 'no_stripping'
   }
 
   action_config {
@@ -452,6 +465,7 @@ toolchain {
     implies: 'linker_param_file'
     implies: 'msvc_env'
     implies: 'use_linker'
+    implies: 'no_stripping'
   }
 
   action_config {
@@ -789,10 +803,6 @@ toolchain {
       flag_group {
         flag: "/Od"
         flag: "/Z7"
-        # This will signal the wrapper that we are doing a debug build, which sets
-        # some internal state of the toolchain wrapper. It is intentionally a "-"
-        # flag to make this very obvious.
-        flag: "-g"
       }
     }
     flag_set {
@@ -839,6 +849,25 @@ toolchain {
       }
     }
     implies: 'link_crt_library'
+  }
+
+  feature {
+    name: 'copts'
+    flag_set {
+      expand_if_all_available: 'copts'
+      action: 'assemble'
+      action: 'preprocess-assemble'
+      action: 'c-compile'
+      action: 'c++-compile'
+      action: 'c++-header-parsing'
+      action: 'c++-header-preprocessing'
+      action: 'c++-module-compile'
+      action: 'c++-module-codegen'
+      flag_group {
+        iterate_over: 'copts'
+        flag: '%{copts}'
+      }
+    }
   }
 
 %{compilation_mode_content}
