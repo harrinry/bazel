@@ -42,7 +42,6 @@ import com.google.devtools.build.lib.analysis.actions.ParameterFileWriteAction;
 import com.google.devtools.build.lib.analysis.actions.SpawnAction;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
 import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.collect.ImmutableIterable;
 import com.google.devtools.build.lib.collect.nestedset.NestedSet;
 import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
 import com.google.devtools.build.lib.collect.nestedset.Order;
@@ -171,8 +170,7 @@ public class JavaHeaderCompileAction extends SpawnAction {
     private final Collection<Artifact> sourceJars = new ArrayList<>();
     private NestedSet<Artifact> classpathEntries =
         NestedSetBuilder.emptySet(Order.NAIVE_LINK_ORDER);
-    private ImmutableIterable<Artifact> bootclasspathEntries =
-        ImmutableIterable.from(ImmutableList.<Artifact>of());
+    private ImmutableList<Artifact> bootclasspathEntries = ImmutableList.<Artifact>of();
     @Nullable private String ruleKind;
     @Nullable private Label targetLabel;
     private PathFragment tempDirectory;
@@ -250,7 +248,7 @@ public class JavaHeaderCompileAction extends SpawnAction {
     }
 
     /** Sets the compilation bootclasspath entries. */
-    public Builder setBootclasspathEntries(ImmutableIterable<Artifact> bootclasspathEntries) {
+    public Builder setBootclasspathEntries(ImmutableList<Artifact> bootclasspathEntries) {
       checkNotNull(bootclasspathEntries, "bootclasspathEntries must not be null");
       this.bootclasspathEntries = bootclasspathEntries;
       return this;
@@ -423,7 +421,7 @@ public class JavaHeaderCompileAction extends SpawnAction {
               ParameterFile.ParameterFileType.UNQUOTED,
               ISO_8859_1);
       CommandLine transitiveCommandLine =
-          getBaseArgs(javaToolchain).addPaths("@%s", paramsFile.getExecPath()).build();
+          getBaseArgs(javaToolchain).addFormatted("@%s", paramsFile.getExecPath()).build();
       NestedSet<Artifact> transitiveInputs =
           NestedSetBuilder.<Artifact>stableOrder()
               .addTransitive(baseInputs)
@@ -505,10 +503,10 @@ public class JavaHeaderCompileAction extends SpawnAction {
 
     private CustomCommandLine.Builder getBaseArgs(JavaToolchainProvider javaToolchain) {
       return CustomCommandLine.builder()
-          .addPath(JavaCommon.getHostJavaExecutable(ruleContext))
+          .add(JavaCommon.getHostJavaExecutable(ruleContext))
           .add("-Xverify:none")
           .add(javaToolchain.getJvmOptions())
-          .addExecPath("-jar", javaToolchain.getHeaderCompiler());
+          .add("-jar", javaToolchain.getHeaderCompiler());
     }
 
     /**
@@ -517,20 +515,20 @@ public class JavaHeaderCompileAction extends SpawnAction {
      */
     private CustomCommandLine.Builder baseCommandLine(
         CustomCommandLine.Builder result, NestedSet<Artifact> classpathEntries) {
-      result.addExecPath("--output", outputJar);
+      result.add("--output", outputJar);
 
       if (outputDepsProto != null) {
-        result.addExecPath("--output_deps", outputDepsProto);
+        result.add("--output_deps", outputDepsProto);
       }
 
-      result.add("--temp_dir").addPath(tempDirectory);
+      result.add("--temp_dir").add(tempDirectory);
 
-      result.addExecPaths("--bootclasspath", bootclasspathEntries);
+      result.add("--bootclasspath", bootclasspathEntries);
 
-      result.addExecPaths("--sources", sourceFiles);
+      result.add("--sources", sourceFiles);
 
       if (!sourceJars.isEmpty()) {
-        result.addExecPaths("--source_jars", sourceJars);
+        result.add("--source_jars", ImmutableList.copyOf(sourceJars));
       }
 
       result.add("--javacopts", javacOpts);
@@ -543,14 +541,14 @@ public class JavaHeaderCompileAction extends SpawnAction {
         result.add("--target_label");
         if (targetLabel.getPackageIdentifier().getRepository().isDefault()
             || targetLabel.getPackageIdentifier().getRepository().isMain()) {
-          result.add(targetLabel.toString());
+          result.add(targetLabel);
         } else {
           // @-prefixed strings will be assumed to be params filenames and expanded,
           // so add an extra @ to escape it.
-          result.add("@" + targetLabel);
+          result.addWithPrefix("@", targetLabel);
         }
       }
-      result.addExecPaths("--classpath", classpathEntries);
+      result.add("--classpath", classpathEntries);
       return result;
     }
 
@@ -559,18 +557,18 @@ public class JavaHeaderCompileAction extends SpawnAction {
       CustomCommandLine.Builder result = CustomCommandLine.builder();
       baseCommandLine(result, classpathEntries);
       if (!processorNames.isEmpty()) {
-        result.add("--processors", processorNames);
+        result.add("--processors", ImmutableList.copyOf(processorNames));
       }
       if (!processorFlags.isEmpty()) {
-        result.add("--javacopts", processorFlags);
+        result.add("--javacopts", ImmutableList.copyOf(processorFlags));
       }
       if (!processorPath.isEmpty()) {
-        result.addExecPaths("--processorpath", processorPath);
+        result.add("--processorpath", processorPath);
       }
       if (strictJavaDeps != BuildConfiguration.StrictDepsMode.OFF) {
         result.add(new JavaCompileAction.JarsToTargetsArgv(classpathEntries, directJars));
         if (!compileTimeDependencyArtifacts.isEmpty()) {
-          result.addExecPaths("--deps_artifacts", compileTimeDependencyArtifacts);
+          result.add("--deps_artifacts", compileTimeDependencyArtifacts);
         }
       }
       return result.build();

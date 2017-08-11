@@ -25,6 +25,7 @@ import com.google.devtools.build.lib.analysis.actions.CustomCommandLine;
 import com.google.devtools.build.lib.analysis.actions.SpawnAction;
 import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
 import com.google.devtools.build.lib.rules.android.ResourceContainerConverter.Builder.SeparatorType;
+import com.google.devtools.build.lib.util.OS;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -132,7 +133,7 @@ public class AndroidResourceMergingActionBuilder {
     // Use a FluentIterable to avoid flattening the NestedSets
     NestedSetBuilder<Artifact> inputs = NestedSetBuilder.naiveLinkOrder();
 
-    builder.addExecPath("--androidJar", sdk.getAndroidJar());
+    builder.add("--androidJar", sdk.getAndroidJar());
     inputs.add(sdk.getAndroidJar());
 
     Preconditions.checkNotNull(primary);
@@ -140,7 +141,7 @@ public class AndroidResourceMergingActionBuilder {
     inputs.addTransitive(RESOURCE_CONTAINER_TO_ARTIFACTS.apply(primary));
 
     Preconditions.checkNotNull(primary.getManifest());
-    builder.addExecPath("--primaryManifest", primary.getManifest());
+    builder.add("--primaryManifest", primary.getManifest());
     inputs.add(primary.getManifest());
 
     ResourceContainerConverter.convertDependencies(
@@ -148,19 +149,19 @@ public class AndroidResourceMergingActionBuilder {
 
     List<Artifact> outs = new ArrayList<>();
     if (classJarOut != null) {
-      builder.addExecPath("--classJarOutput", classJarOut);
+      builder.add("--classJarOutput", classJarOut);
       outs.add(classJarOut);
     }
 
     if (mergedResourcesOut != null) {
-      builder.addExecPath("--resourcesOutput", mergedResourcesOut);
+      builder.add("--resourcesOutput", mergedResourcesOut);
       outs.add(mergedResourcesOut);
     }
 
     // For now, do manifest processing to remove placeholders that aren't handled by the legacy
     // manifest merger. Remove this once enough users migrate over to the new manifest merger.
     if (manifestOut != null) {
-      builder.addExecPath("--manifestOutput", manifestOut);
+      builder.add("--manifestOutput", manifestOut);
       outs.add(manifestOut);
     }
 
@@ -173,7 +174,7 @@ public class AndroidResourceMergingActionBuilder {
     // TODO(corysmith): Move the data binding parsing out of the merging pass to enable faster
     // aapt2 builds.
     if (dataBindingInfoZip != null) {
-      builder.addExecPath("--dataBindingInfoOut", dataBindingInfoZip);
+      builder.add("--dataBindingInfoOut", dataBindingInfoZip);
       outs.add(dataBindingInfoZip);
     }
 
@@ -182,10 +183,25 @@ public class AndroidResourceMergingActionBuilder {
     }
 
     SpawnAction.Builder spawnActionBuilder = new SpawnAction.Builder();
+
+    if (OS.getCurrent() == OS.WINDOWS) {
+      // Some flags (e.g. --mainData) may specify lists (or lists of lists) separated by special
+      // characters (colon, semicolon, hashmark, ampersand) that don't work on Windows, and quoting
+      // semantics are very complicated (more so than in Bash), so let's just always use a parameter
+      // file.
+      // TODO(laszlocsomor), TODO(corysmith): restructure the Android BusyBux's flags by deprecating
+      // list-type and list-of-list-type flags that use such problematic separators in favor of
+      // multi-value flags (to remove one level of listing) and by changing all list separators to a
+      // platform-safe character (= comma).
+      spawnActionBuilder.alwaysUseParameterFile(ParameterFileType.UNQUOTED);
+    } else {
+      spawnActionBuilder.useParameterFile(ParameterFileType.UNQUOTED);
+    }
+
     // Create the spawn action.
     ruleContext.registerAction(
         spawnActionBuilder
-            .useParameterFile(ParameterFileType.UNQUOTED)
+            .useDefaultShellEnvironment()
             .addTransitiveInputs(inputs.build())
             .addOutputs(ImmutableList.copyOf(outs))
             .setCommandLine(builder.build())

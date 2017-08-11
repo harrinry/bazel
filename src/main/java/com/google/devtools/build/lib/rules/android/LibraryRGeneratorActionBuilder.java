@@ -13,6 +13,8 @@
 // limitations under the License.
 package com.google.devtools.build.lib.rules.android;
 
+import static com.google.common.collect.ImmutableList.toImmutableList;
+
 import com.google.common.base.Strings;
 import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableList;
@@ -72,24 +74,25 @@ public class LibraryRGeneratorActionBuilder {
         FluentIterable.from(deps).append(resourceContainer);
 
     if (!symbolProviders.isEmpty()) {
-      builder.addExecPaths("--symbols", symbolProviders.transform(c -> c.getSymbols()));
-      inputs.addTransitive(
-          NestedSetBuilder.wrap(
-              Order.NAIVE_LINK_ORDER, symbolProviders.transform(ResourceContainer::getSymbols)));
+      ImmutableList<Artifact> symbols =
+          symbolProviders.stream().map(ResourceContainer::getSymbols).collect(toImmutableList());
+      builder.add("--symbols", symbols);
+      inputs.addTransitive(NestedSetBuilder.wrap(Order.NAIVE_LINK_ORDER, symbols));
     }
 
-    builder.addExecPath("--classJarOutput", rJavaClassJar);
+    builder.add("--classJarOutput", rJavaClassJar);
 
-    builder.addExecPath("--androidJar", sdk.getAndroidJar());
+    builder.add("--androidJar", sdk.getAndroidJar());
     inputs.add(sdk.getAndroidJar());
 
     // Create the spawn action.
     SpawnAction.Builder spawnActionBuilder = new SpawnAction.Builder();
     ruleContext.registerAction(
         spawnActionBuilder
+            .useParameterFile(ParameterFileType.UNQUOTED)
+            .useDefaultShellEnvironment()
             .addTransitiveInputs(inputs.build())
             .addOutputs(ImmutableList.<Artifact>of(rJavaClassJar))
-            .useParameterFile(ParameterFileType.UNQUOTED)
             .setCommandLine(builder.build())
             .setExecutable(executable)
             .setProgressMessage("Generating Library R Classes: %s", ruleContext.getLabel())

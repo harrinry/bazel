@@ -22,12 +22,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.io.ByteStreams;
 import com.google.devtools.build.lib.actions.ActionInput;
 import com.google.devtools.build.lib.actions.ActionInputFileCache;
-import com.google.devtools.build.lib.actions.ActionInputHelper;
 import com.google.devtools.build.lib.actions.Artifact.ArtifactExpander;
 import com.google.devtools.build.lib.actions.ExecutionRequirements;
 import com.google.devtools.build.lib.actions.ResourceManager;
@@ -53,6 +51,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.SortedMap;
@@ -144,7 +143,7 @@ public class LocalSpawnRunnerTest {
     private final TreeMap<PathFragment, ActionInput> inputMapping = new TreeMap<>();
 
     private long timeoutMillis;
-    private final List<Iterable<ActionInput>> prefetched = new ArrayList<>();
+    private boolean prefetchCalled;
     private boolean lockOutputFilesCalled;
 
     @Override
@@ -153,13 +152,18 @@ public class LocalSpawnRunnerTest {
     }
 
     @Override
-    public void prefetchInputs(Iterable<ActionInput> inputs) throws IOException {
-      prefetched.add(Preconditions.checkNotNull(inputs));
+    public void prefetchInputs() throws IOException {
+      prefetchCalled = true;
     }
 
     @Override
     public void lockOutputFiles() throws InterruptedException {
       lockOutputFilesCalled = true;
+    }
+
+    @Override
+    public boolean speculating() {
+      return false;
     }
 
     @Override
@@ -173,8 +177,8 @@ public class LocalSpawnRunnerTest {
     }
 
     @Override
-    public long getTimeoutMillis() {
-      return timeoutMillis;
+    public Duration getTimeout() {
+      return Duration.ofMillis(timeoutMillis);
     }
 
     @Override
@@ -229,6 +233,12 @@ public class LocalSpawnRunnerTest {
 
   @Test
   public void vanillaZeroExit() throws Exception {
+    if (OS.getCurrent() == OS.WINDOWS) {
+      // TODO(#3536): Make this test work on Windows.
+      // The Command API implicitly absolutizes the path, and we get weird paths on Windows:
+      // T:\execroot\execroot\_bin\process-wrapper
+      return;
+    }
     Subprocess.Factory factory = mock(Subprocess.Factory.class);
     ArgumentCaptor<SubprocessBuilder> captor = ArgumentCaptor.forClass(SubprocessBuilder.class);
     when(factory.create(captor.capture())).thenReturn(new FinishedSubprocess(0));
@@ -260,7 +270,7 @@ public class LocalSpawnRunnerTest {
                 "/bin/echo",
                 "Hi!"));
     assertThat(captor.getValue().getEnv()).containsExactly("VARIABLE", "value");
-    assertThat(captor.getValue().getTimeoutMillis()).isEqualTo(-1);
+    assertThat(captor.getValue().getTimeoutMillis()).isEqualTo(0);
 
     assertThat(policy.lockOutputFilesCalled).isTrue();
     assertThat(policy.reportedStatus)
@@ -269,6 +279,12 @@ public class LocalSpawnRunnerTest {
 
   @Test
   public void noProcessWrapper() throws Exception {
+    if (OS.getCurrent() == OS.WINDOWS) {
+      // TODO(#3536): Make this test work on Windows.
+      // The Command API implicitly absolutizes the path, and we get weird paths on Windows:
+      // T:\execroot\bin\echo
+      return;
+    }
     Subprocess.Factory factory = mock(Subprocess.Factory.class);
     ArgumentCaptor<SubprocessBuilder> captor = ArgumentCaptor.forClass(SubprocessBuilder.class);
     when(factory.create(captor.capture())).thenReturn(new FinishedSubprocess(0));
@@ -300,6 +316,12 @@ public class LocalSpawnRunnerTest {
 
   @Test
   public void nonZeroExit() throws Exception {
+    if (OS.getCurrent() == OS.WINDOWS) {
+      // TODO(#3536): Make this test work on Windows.
+      // The Command API implicitly absolutizes the path, and we get weird paths on Windows:
+      // T:\execroot\execroot\_bin\process-wrapper
+      return;
+    }
     Subprocess.Factory factory = mock(Subprocess.Factory.class);
     ArgumentCaptor<SubprocessBuilder> captor = ArgumentCaptor.forClass(SubprocessBuilder.class);
     when(factory.create(captor.capture())).thenReturn(new FinishedSubprocess(3));
@@ -434,7 +456,7 @@ public class LocalSpawnRunnerTest {
     policy.timeoutMillis = 123 * 1000L;
     outErr = new FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"));
     runner.exec(SIMPLE_SPAWN, policy);
-    assertThat(policy.prefetched).isNotEmpty();
+    assertThat(policy.prefetchCalled).isTrue();
   }
 
   @Test
@@ -454,34 +476,7 @@ public class LocalSpawnRunnerTest {
     Spawn spawn = new SpawnBuilder("/bin/echo", "Hi!")
         .withExecutionInfo(ExecutionRequirements.DISABLE_LOCAL_PREFETCH, "").build();
     runner.exec(spawn, policy);
-    assertThat(policy.prefetched).isEmpty();
-  }
-
-  /**
-   * Regression test: the SpawnInputExpander can return null values for empty files, but the
-   * ActionInputPrefetcher expects no null values.
-   */
-  @Test
-  public void checkPrefetchCalledNonNull() throws Exception {
-    Subprocess.Factory factory = mock(Subprocess.Factory.class);
-    when(factory.create(any())).thenReturn(new FinishedSubprocess(0));
-    SubprocessBuilder.setSubprocessFactory(factory);
-
-    LocalExecutionOptions options = Options.getDefaults(LocalExecutionOptions.class);
-    LocalSpawnRunner runner = new LocalSpawnRunner(
-        fs.getPath("/execroot"), options, resourceManager, USE_WRAPPER, OS.LINUX,
-        "product-name", LocalEnvProvider.UNMODIFIED);
-
-    policy.inputMapping.put(PathFragment.create("relative/path"), null);
-    policy.inputMapping.put(
-        PathFragment.create("another/relative/path"), ActionInputHelper.fromPath("/absolute/path"));
-    policy.timeoutMillis = 123 * 1000L;
-    outErr = new FileOutErr(fs.getPath("/out/stdout"), fs.getPath("/out/stderr"));
-    runner.exec(SIMPLE_SPAWN, policy);
-    assertThat(policy.prefetched).hasSize(1);
-    Iterable<ActionInput> prefetched = policy.prefetched.get(0);
-    assertThat(prefetched).doesNotContain(null);
-    assertThat(prefetched).containsExactly(ActionInputHelper.fromPath("/absolute/path"));
+    assertThat(policy.prefetchCalled).isFalse();
   }
 
   @Test
@@ -506,6 +501,12 @@ public class LocalSpawnRunnerTest {
 
   @Test
   public void useCorrectExtensionOnWindows() throws Exception {
+    if (OS.getCurrent() == OS.WINDOWS) {
+      // TODO(#3536): Make this test work on Windows.
+      // The Command API implicitly absolutizes the path, and we get weird paths on Windows:
+      // T:\execroot\execroot\_bin\process-wrapper.exe
+      return;
+    }
     Subprocess.Factory factory = mock(Subprocess.Factory.class);
     ArgumentCaptor<SubprocessBuilder> captor = ArgumentCaptor.forClass(SubprocessBuilder.class);
     when(factory.create(captor.capture())).thenReturn(new FinishedSubprocess(0));

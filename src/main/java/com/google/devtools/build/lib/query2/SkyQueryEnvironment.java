@@ -38,7 +38,6 @@ import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.devtools.build.lib.cmdline.Label;
-import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
 import com.google.devtools.build.lib.cmdline.PackageIdentifier;
 import com.google.devtools.build.lib.cmdline.TargetParsingException;
 import com.google.devtools.build.lib.cmdline.TargetPattern;
@@ -480,7 +479,7 @@ public class SkyQueryEnvironment extends AbstractBlazeQueryEnvironment<Target>
   @Override
   public ThreadSafeMutableSet<Target> getFwdDeps(Iterable<Target> targets)
       throws InterruptedException {
-    Map<SkyKey, Target> targetsByKey = new HashMap<>(Iterables.size(targets));
+    Map<SkyKey, Target> targetsByKey = Maps.newHashMapWithExpectedSize(Iterables.size(targets));
     for (Target target : targets) {
       targetsByKey.put(TARGET_TO_SKY_KEY.apply(target), target);
     }
@@ -778,15 +777,11 @@ public class SkyQueryEnvironment extends AbstractBlazeQueryEnvironment<Target>
 
           if (buildFiles) {
             // Also add the BUILD file of the subinclude.
-            try {
-              addIfUniqueLabel(
-                  getSubincludeTarget(subinclude.getLocalTargetLabel("BUILD"), pkg),
-                  seenLabels,
-                  dependentFiles);
-
-            } catch (LabelSyntaxException e) {
-              throw new AssertionError("BUILD should always parse as a target name", e);
-            }
+            addIfUniqueLabel(
+                getSubincludeTarget(
+                    Label.createUnvalidated(subinclude.getPackageIdentifier(), "BUILD"), pkg),
+                seenLabels,
+                dependentFiles);
           }
         }
       }

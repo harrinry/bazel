@@ -39,12 +39,14 @@ import com.google.devtools.build.lib.analysis.FilesToRunProvider;
 import com.google.devtools.build.lib.analysis.OutputGroupProvider;
 import com.google.devtools.build.lib.analysis.RuleConfiguredTarget.Mode;
 import com.google.devtools.build.lib.analysis.RuleConfiguredTargetBuilder;
+import com.google.devtools.build.lib.analysis.RuleConfiguredTargetFactory;
 import com.google.devtools.build.lib.analysis.RuleContext;
 import com.google.devtools.build.lib.analysis.Runfiles;
 import com.google.devtools.build.lib.analysis.RunfilesProvider;
 import com.google.devtools.build.lib.analysis.TransitiveInfoCollection;
 import com.google.devtools.build.lib.analysis.actions.CommandLine;
 import com.google.devtools.build.lib.analysis.actions.CustomCommandLine;
+import com.google.devtools.build.lib.analysis.actions.CustomCommandLine.VectorArg;
 import com.google.devtools.build.lib.analysis.actions.SpawnAction;
 import com.google.devtools.build.lib.analysis.actions.SpawnAction.Builder;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
@@ -54,7 +56,6 @@ import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
 import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
 import com.google.devtools.build.lib.packages.BuildType;
 import com.google.devtools.build.lib.packages.TriState;
-import com.google.devtools.build.lib.rules.RuleConfiguredTargetFactory;
 import com.google.devtools.build.lib.rules.android.AndroidConfiguration.AndroidAaptVersion;
 import com.google.devtools.build.lib.rules.android.AndroidConfiguration.AndroidBinaryType;
 import com.google.devtools.build.lib.rules.android.AndroidRuleClasses.MultidexMode;
@@ -1296,10 +1297,11 @@ public abstract class AndroidBinary implements RuleConfiguredTargetFactory {
 
       Artifact classesDex = getDxArtifact(ruleContext, "classes.dex.zip");
       if (dexShards > 1) {
-        List<Artifact> shards = new ArrayList<>(dexShards);
+        ImmutableList.Builder<Artifact> shardsBuilder = ImmutableList.builder();
         for (int i = 1; i <= dexShards; i++) {
-          shards.add(getDxArtifact(ruleContext, "shard" + i + ".jar"));
+          shardsBuilder.add(getDxArtifact(ruleContext, "shard" + i + ".jar"));
         }
+        ImmutableList<Artifact> shards = shardsBuilder.build();
 
         Artifact javaResourceJar =
             createShuffleJarAction(
@@ -1315,11 +1317,11 @@ public abstract class AndroidBinary implements RuleConfiguredTargetFactory {
                 derivedJarFunction,
                 mainDexList);
 
-        List<Artifact> shardDexes = new ArrayList<>(dexShards);
+        ImmutableList.Builder<Artifact> shardDexesBuilder = ImmutableList.builder();
         for (int i = 1; i <= dexShards; i++) {
           Artifact shard = shards.get(i - 1);
           Artifact shardDex = getDxArtifact(ruleContext, "shard" + i + ".dex.zip");
-          shardDexes.add(shardDex);
+          shardDexesBuilder.add(shardDex);
           if (incrementalDexing.contains(AndroidBinaryType.MULTIDEX_SHARDED)) {
             // If there's a main dex list then the first shard contains exactly those files.
             // To work with devices that lack native multi-dex support we need to make sure that
@@ -1334,11 +1336,13 @@ public abstract class AndroidBinary implements RuleConfiguredTargetFactory {
                 ruleContext, shard, shardDex, dexopts, /* multidex */ true, (Artifact) null);
           }
         }
+        ImmutableList<Artifact> shardDexes = shardDexesBuilder.build();
 
-        CommandLine mergeCommandLine = CustomCommandLine.builder()
-            .addBeforeEachExecPath("--input_zip", shardDexes)
-            .addExecPath("--output_zip", classesDex)
-            .build();
+        CommandLine mergeCommandLine =
+            CustomCommandLine.builder()
+                .add(VectorArg.of(shardDexes).beforeEach("--input_zip"))
+                .add("--output_zip", classesDex)
+                .build();
         ruleContext.registerAction(
             new SpawnAction.Builder()
                 .setMnemonic("MergeDexZips")
@@ -1536,7 +1540,7 @@ public abstract class AndroidBinary implements RuleConfiguredTargetFactory {
       RuleContext ruleContext,
       boolean useDexArchives,
       @Nullable Artifact proguardedJar,
-      List<Artifact> shards,
+      ImmutableList<Artifact> shards,
       AndroidCommon common,
       @Nullable Artifact inclusionFilterJar,
       List<String> dexopts,
@@ -1558,12 +1562,13 @@ public abstract class AndroidBinary implements RuleConfiguredTargetFactory {
             .addOutputs(shards)
             .addOutput(javaResourceJar);
 
-    CustomCommandLine.Builder shardCommandLine = CustomCommandLine.builder()
-        .addBeforeEachExecPath("--output_jar", shards)
-        .addExecPath("--output_resources", javaResourceJar);
+    CustomCommandLine.Builder shardCommandLine =
+        CustomCommandLine.builder()
+            .add(VectorArg.of(shards).beforeEach("--output_jar"))
+            .add("--output_resources", javaResourceJar);
 
     if (mainDexList != null) {
-      shardCommandLine.addExecPath("--main_dex_filter", mainDexList);
+      shardCommandLine.add("--main_dex_filter", mainDexList);
       shardAction.addInput(mainDexList);
     }
 
@@ -1575,11 +1580,14 @@ public abstract class AndroidBinary implements RuleConfiguredTargetFactory {
     if (proguardedJar != null) {
       // When proguard is used we can't use dex archives, so just shuffle the proguarded jar
       checkArgument(!useDexArchives, "Dex archives are incompatible with Proguard");
-      shardCommandLine.addExecPath("--input_jar", proguardedJar);
+      shardCommandLine.add("--input_jar", proguardedJar);
       shardAction.addInput(proguardedJar);
     } else {
-      Iterable<Artifact> classpath =
-          Iterables.concat(common.getRuntimeJars(), attributes.getRuntimeClassPathForArchive());
+      ImmutableList<Artifact> classpath =
+          ImmutableList.<Artifact>builder()
+              .addAll(common.getRuntimeJars())
+              .addAll(attributes.getRuntimeClassPathForArchive())
+              .build();
       // Check whether we can use dex archives.  Besides the --incremental_dexing flag, also
       // make sure the "dexopts" attribute on this target doesn't mention any problematic flags.
       if (useDexArchives) {
@@ -1609,13 +1617,13 @@ public abstract class AndroidBinary implements RuleConfiguredTargetFactory {
         classpath = dexedClasspath.build();
         shardCommandLine.add("--split_dexed_classes");
       } else {
-        classpath = Iterables.transform(classpath, derivedJarFunction);
+        classpath = classpath.stream().map(derivedJarFunction::apply).collect(toImmutableList());
       }
-      shardCommandLine.addBeforeEachExecPath("--input_jar", classpath);
+      shardCommandLine.add(VectorArg.of(classpath).beforeEach("--input_jar"));
       shardAction.addInputs(classpath);
 
       if (inclusionFilterJar != null) {
-        shardCommandLine.addExecPath("--inclusion_filter_jar", inclusionFilterJar);
+        shardCommandLine.add("--inclusion_filter_jar", inclusionFilterJar);
         shardAction.addInput(inclusionFilterJar);
       }
     }

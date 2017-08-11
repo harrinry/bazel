@@ -50,6 +50,7 @@ import com.google.devtools.remoteexecution.v1test.ActionResult;
 import com.google.devtools.remoteexecution.v1test.ExecuteRequest;
 import com.google.devtools.remoteexecution.v1test.ExecuteResponse;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.SortedMap;
 import org.junit.Before;
@@ -231,13 +232,18 @@ public class RemoteSpawnRunnerTest {
     }
 
     @Override
-    public void prefetchInputs(Iterable<ActionInput> inputs) throws IOException {
+    public void prefetchInputs() throws IOException {
       throw new UnsupportedOperationException();
     }
 
     @Override
     public void lockOutputFiles() throws InterruptedException {
       throw new UnsupportedOperationException();
+    }
+
+    @Override
+    public boolean speculating() {
+      return false;
     }
 
     @Override
@@ -251,8 +257,8 @@ public class RemoteSpawnRunnerTest {
     }
 
     @Override
-    public long getTimeoutMillis() {
-      return 0;
+    public Duration getTimeout() {
+      return Duration.ZERO;
     }
 
     @Override

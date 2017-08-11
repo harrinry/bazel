@@ -33,12 +33,12 @@ import com.google.devtools.build.lib.vfs.PathFragment;
 import com.google.devtools.build.lib.vfs.Symlinks;
 import java.io.File;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.SortedMap;
-import java.util.concurrent.TimeUnit;
 
 /** Spawn runner that uses linux sandboxing APIs to execute a local subprocess. */
 final class LinuxSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
@@ -67,12 +67,7 @@ final class LinuxSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
 
     Command cmd = new Command(args.toArray(new String[0]), env, cwd);
     try {
-      cmd.execute(
-          /* stdin */ new byte[] {},
-          Command.NO_OBSERVER,
-          ByteStreams.nullOutputStream(),
-          ByteStreams.nullOutputStream(),
-          /* killSubprocessOnInterrupt */ true);
+      cmd.execute(ByteStreams.nullOutputStream(), ByteStreams.nullOutputStream());
     } catch (CommandException e) {
       return false;
     }
@@ -118,15 +113,17 @@ final class LinuxSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
 
     Set<Path> writableDirs = getWritableDirs(sandboxExecRoot, spawn.getEnvironment());
     ImmutableSet<PathFragment> outputs = SandboxHelpers.getOutputFiles(spawn);
-    int timeoutSeconds = (int) TimeUnit.MILLISECONDS.toSeconds(policy.getTimeoutMillis());
-    List<String> arguments = computeCommandLine(
-        spawn,
-        timeoutSeconds,
-        linuxSandbox,
-        writableDirs,
-        getTmpfsPaths(),
-        getReadOnlyBindMounts(blazeDirs, sandboxExecRoot),
-        allowNetwork || SandboxHelpers.shouldAllowNetwork(spawn));
+    Duration timeout = policy.getTimeout();
+    List<String> arguments =
+        computeCommandLine(
+            spawn,
+            timeout,
+            linuxSandbox,
+            writableDirs,
+            getTmpfsPaths(),
+            getReadOnlyBindMounts(blazeDirs, sandboxExecRoot),
+            allowNetwork || SandboxHelpers.shouldAllowNetwork(spawn),
+            spawn.getExecutionInfo().containsKey("requires-fakeroot"));
 
     SandboxedSpawn sandbox = new SymlinkedSandboxedSpawn(
         sandboxPath,
@@ -136,17 +133,18 @@ final class LinuxSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
         SandboxHelpers.getInputFiles(spawn, policy, execRoot),
         outputs,
         writableDirs);
-    return runSpawn(spawn, sandbox, policy, execRoot, timeoutSeconds);
+    return runSpawn(spawn, sandbox, policy, execRoot, timeout);
   }
 
   private List<String> computeCommandLine(
       Spawn spawn,
-      int timeoutSeconds,
+      Duration timeout,
       Path linuxSandbox,
       Set<Path> writableDirs,
       Set<Path> tmpfsPaths,
       Map<Path, Path> bindMounts,
-      boolean allowNetwork) {
+      boolean allowNetwork,
+      boolean requiresFakeRoot) {
     List<String> commandLineArgs = new ArrayList<>();
     commandLineArgs.add(linuxSandbox.getPathString());
 
@@ -155,9 +153,9 @@ final class LinuxSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
     }
 
     // Kill the process after a timeout.
-    if (timeoutSeconds != -1) {
+    if (!timeout.isZero()) {
       commandLineArgs.add("-T");
-      commandLineArgs.add(Integer.toString(timeoutSeconds));
+      commandLineArgs.add(Long.toString(timeout.getSeconds()));
     }
 
     if (timeoutGraceSeconds != -1) {
@@ -197,7 +195,10 @@ final class LinuxSandboxedSpawnRunner extends AbstractSandboxSpawnRunner {
       commandLineArgs.add("-H");
     }
 
-    if (getSandboxOptions().sandboxFakeUsername) {
+    if (requiresFakeRoot) {
+      // Use fake root.
+      commandLineArgs.add("-R");
+    } else if (getSandboxOptions().sandboxFakeUsername) {
       // Use a fake username ("nobody") inside the sandbox.
       commandLineArgs.add("-U");
     }

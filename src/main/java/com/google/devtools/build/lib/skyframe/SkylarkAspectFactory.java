@@ -21,13 +21,13 @@ import com.google.devtools.build.lib.analysis.ConfiguredAspectFactory;
 import com.google.devtools.build.lib.analysis.ConfiguredTarget;
 import com.google.devtools.build.lib.analysis.RuleContext;
 import com.google.devtools.build.lib.analysis.SkylarkProviderValidationUtil;
+import com.google.devtools.build.lib.analysis.skylark.SkylarkRuleConfiguredTargetUtil;
+import com.google.devtools.build.lib.analysis.skylark.SkylarkRuleContext;
 import com.google.devtools.build.lib.events.Location;
 import com.google.devtools.build.lib.packages.AspectDescriptor;
 import com.google.devtools.build.lib.packages.AspectParameters;
 import com.google.devtools.build.lib.packages.Info;
 import com.google.devtools.build.lib.packages.SkylarkAspect;
-import com.google.devtools.build.lib.rules.SkylarkRuleConfiguredTargetUtil;
-import com.google.devtools.build.lib.rules.SkylarkRuleContext;
 import com.google.devtools.build.lib.skylarkinterface.SkylarkValue;
 import com.google.devtools.build.lib.syntax.Environment;
 import com.google.devtools.build.lib.syntax.EvalException;
@@ -143,6 +143,7 @@ public class SkylarkAspectFactory implements ConfiguredAspectFactory {
 
   private void addDeclaredProviders(ConfiguredAspect.Builder builder, Iterable aspectSkylarkObject)
       throws EvalException {
+    int i = 0;
     for (Object o : aspectSkylarkObject) {
       Location loc = skylarkAspect.getImplementation().getLocation();
       Info declaredProvider =
@@ -151,9 +152,12 @@ public class SkylarkAspectFactory implements ConfiguredAspectFactory {
               Info.class,
               loc,
               "A return value of an aspect implementation function should be "
-                  + "a sequence of declared providers");
+                  + "a sequence of declared providers, instead got a %s at index %d",
+              o.getClass(),
+              i);
       Location creationLoc = declaredProvider.getCreationLocOrNull();
       builder.addSkylarkDeclaredProvider(declaredProvider, creationLoc != null ? creationLoc : loc);
+      i++;
     }
   }
 

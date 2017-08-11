@@ -77,6 +77,7 @@ import io.grpc.inprocess.InProcessServerBuilder;
 import io.grpc.stub.StreamObserver;
 import io.grpc.util.MutableHandlerRegistry;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.Set;
 import java.util.SortedMap;
@@ -118,13 +119,18 @@ public class GrpcRemoteExecutionClientTest {
         }
 
         @Override
-        public void prefetchInputs(Iterable<ActionInput> inputs) {
+        public void prefetchInputs() {
           throw new UnsupportedOperationException();
         }
 
         @Override
         public void lockOutputFiles() throws InterruptedException {
           throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean speculating() {
+          return false;
         }
 
         @Override
@@ -138,8 +144,8 @@ public class GrpcRemoteExecutionClientTest {
         }
 
         @Override
-        public long getTimeoutMillis() {
-          return 0;
+        public Duration getTimeout() {
+          return Duration.ZERO;
         }
 
         @Override

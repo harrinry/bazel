@@ -23,6 +23,7 @@ import com.google.devtools.build.lib.actions.ResourceManager;
 import com.google.devtools.build.lib.actions.ResourceManager.ResourceHandle;
 import com.google.devtools.build.lib.actions.Spawn;
 import com.google.devtools.build.lib.actions.UserExecException;
+import com.google.devtools.build.lib.exec.ExecutionOptions;
 import com.google.devtools.build.lib.exec.SpawnExecException;
 import com.google.devtools.build.lib.exec.SpawnResult;
 import com.google.devtools.build.lib.exec.SpawnResult.Status;
@@ -38,6 +39,7 @@ import com.google.devtools.build.lib.vfs.FileSystem;
 import com.google.devtools.build.lib.vfs.Path;
 import com.google.devtools.build.lib.vfs.PathFragment;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Map;
 
 /** Abstract common ancestor for sandbox spawn runners implementing the common parts. */
@@ -50,11 +52,13 @@ abstract class AbstractSandboxSpawnRunner implements SpawnRunner {
 
   private final Path sandboxBase;
   private final SandboxOptions sandboxOptions;
+  private final boolean verboseFailures;
   private final ImmutableSet<Path> inaccessiblePaths;
 
   public AbstractSandboxSpawnRunner(CommandEnvironment cmdEnv, Path sandboxBase) {
     this.sandboxBase = sandboxBase;
     this.sandboxOptions = cmdEnv.getOptions().getOptions(SandboxOptions.class);
+    this.verboseFailures = cmdEnv.getOptions().getOptions(ExecutionOptions.class).verboseFailures;
     this.inaccessiblePaths =
         sandboxOptions.getInaccessiblePaths(cmdEnv.getDirectories().getFileSystem());
   }
@@ -81,15 +85,16 @@ abstract class AbstractSandboxSpawnRunner implements SpawnRunner {
       SandboxedSpawn sandbox,
       SpawnExecutionPolicy policy,
       Path execRoot,
-      int timeoutSeconds)
+      Duration timeout)
           throws ExecException, IOException, InterruptedException {
     try {
       sandbox.createFileSystem();
       OutErr outErr = policy.getFileOutErr();
-      SpawnResult result = run(sandbox, outErr, timeoutSeconds);
-  
+      policy.prefetchInputs();
+
+      SpawnResult result = run(sandbox, outErr, timeout);
+
       policy.lockOutputFiles();
-  
       try {
         // We copy the outputs even when the command failed.
         sandbox.copyOutputs(execRoot);
@@ -102,12 +107,14 @@ abstract class AbstractSandboxSpawnRunner implements SpawnRunner {
         if (sandboxOptions.sandboxDebug) {
           message =
               CommandFailureUtils.describeCommandFailure(
-                  true, sandbox.getArguments(), sandbox.getEnvironment(), null);
+                  true, sandbox.getArguments(), sandbox.getEnvironment(), execRoot.getPathString());
         } else {
           message =
               CommandFailureUtils.describeCommandFailure(
-                  false, originalSpawn.getArguments(), originalSpawn.getEnvironment(), null)
-                  + SANDBOX_DEBUG_SUGGESTION;
+                  verboseFailures,
+                  originalSpawn.getArguments(),
+                  originalSpawn.getEnvironment(),
+                  execRoot.getPathString()) + SANDBOX_DEBUG_SUGGESTION;
         }
         throw new SpawnExecException(
             message, result, /*forciblyRunRemotely=*/false, /*catastrophe=*/false);
@@ -120,7 +127,7 @@ abstract class AbstractSandboxSpawnRunner implements SpawnRunner {
     }
   }
 
-  private final SpawnResult run(SandboxedSpawn sandbox, OutErr outErr, int timeoutSeconds)
+  private final SpawnResult run(SandboxedSpawn sandbox, OutErr outErr, Duration timeout)
       throws IOException, InterruptedException {
     Command cmd = new Command(
         sandbox.getArguments().toArray(new String[0]),
@@ -130,12 +137,7 @@ abstract class AbstractSandboxSpawnRunner implements SpawnRunner {
     long startTime = System.currentTimeMillis();
     CommandResult result;
     try {
-      result = cmd.execute(
-          /* stdin */ new byte[] {},
-          Command.NO_OBSERVER,
-          outErr.getOutputStream(),
-          outErr.getErrorStream(),
-          /* killSubprocessOnInterrupt */ true);
+      result = cmd.execute(outErr.getOutputStream(), outErr.getErrorStream());
       if (Thread.currentThread().isInterrupted()) {
         throw new InterruptedException();
       }
@@ -157,7 +159,7 @@ abstract class AbstractSandboxSpawnRunner implements SpawnRunner {
     }
 
     long wallTime = System.currentTimeMillis() - startTime;
-    boolean wasTimeout = wasTimeout(timeoutSeconds, wallTime);
+    boolean wasTimeout = wasTimeout(timeout, wallTime);
     Status status = wasTimeout ? Status.TIMEOUT : Status.SUCCESS;
     int exitCode = status == Status.TIMEOUT
         ? POSIX_TIMEOUT_EXIT_CODE
@@ -169,8 +171,8 @@ abstract class AbstractSandboxSpawnRunner implements SpawnRunner {
         .build();
   }
 
-  private boolean wasTimeout(int timeoutSeconds, long wallTimeMillis) {
-    return timeoutSeconds > 0 && wallTimeMillis / 1000.0 > timeoutSeconds;
+  private boolean wasTimeout(Duration timeout, long wallTimeMillis) {
+    return !timeout.isZero() && wallTimeMillis > timeout.toMillis();
   }
 
   /**

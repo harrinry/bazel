@@ -50,6 +50,7 @@ import com.google.devtools.build.lib.analysis.RuleConfiguredTarget.Mode;
 import com.google.devtools.build.lib.analysis.RuleContext;
 import com.google.devtools.build.lib.analysis.actions.CommandLine;
 import com.google.devtools.build.lib.analysis.actions.CustomCommandLine;
+import com.google.devtools.build.lib.analysis.actions.CustomCommandLine.VectorArg;
 import com.google.devtools.build.lib.analysis.actions.SpawnActionTemplate;
 import com.google.devtools.build.lib.analysis.actions.SpawnActionTemplate.OutputPathMapper;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
@@ -289,7 +290,7 @@ public class LegacyCompilationSupport extends CompilationSupport {
       commandLine.add("-g");
     }
 
-    List<String> coverageFlags = ImmutableList.of();
+    ImmutableList<String> coverageFlags = ImmutableList.of();
     if (collectCodeCoverage) {
       if (buildConfiguration.isLLVMCoverageMapFormatEnabled()) {
         coverageFlags = CLANG_LLVM_COVERAGE_FLAGS;
@@ -299,26 +300,27 @@ public class LegacyCompilationSupport extends CompilationSupport {
     }
 
     commandLine
-        .add(compileFlagsForClang(appleConfiguration))
+        .add(ImmutableList.copyOf(compileFlagsForClang(appleConfiguration)))
         .add(commonLinkAndCompileFlagsForClang(objcProvider, objcConfiguration, appleConfiguration))
         .add(objcConfiguration.getCoptsForCompilationMode())
-        .addBeforeEachPath(
-            "-iquote", ObjcCommon.userHeaderSearchPaths(objcProvider, buildConfiguration))
-        .addBeforeEachExecPath("-include", pchFile.asSet())
-        .addBeforeEachPath("-I", priorityHeaders)
-        .addBeforeEachPath("-I", objcProvider.get(INCLUDE))
-        .addBeforeEachPath("-isystem", objcProvider.get(INCLUDE_SYSTEM))
-        .add(otherFlags)
-        .addFormatEach("-D%s", objcProvider.get(DEFINE))
+        .add(
+            VectorArg.of(ObjcCommon.userHeaderSearchPaths(objcProvider, buildConfiguration))
+                .beforeEach("-iquote"))
+        .add(VectorArg.of(ImmutableList.copyOf(pchFile.asSet())).beforeEach("-include"))
+        .add(VectorArg.of(ImmutableList.copyOf(priorityHeaders)).beforeEach("-I"))
+        .add(VectorArg.of(objcProvider.get(INCLUDE)).beforeEach("-I"))
+        .add(VectorArg.of(objcProvider.get(INCLUDE_SYSTEM)).beforeEach("-isystem"))
+        .add(ImmutableList.copyOf(otherFlags))
+        .add(VectorArg.of(objcProvider.get(DEFINE)).formatEach("-D%s"))
         .add(coverageFlags)
-        .add(getCompileRuleCopts());
+        .add(ImmutableList.copyOf(getCompileRuleCopts()));
 
     // Add input source file arguments
     commandLine.add("-c");
     if (sourceFile.isTreeArtifact()) {
       commandLine.addPlaceholderTreeArtifactExecPath(sourceFile);
     } else {
-      commandLine.addPath(sourceFile.getExecPath());
+      commandLine.add(sourceFile.getExecPath());
     }
 
     // Add output object file arguments.
@@ -326,12 +328,12 @@ public class LegacyCompilationSupport extends CompilationSupport {
     if (objFile.isTreeArtifact()) {
       commandLine.addPlaceholderTreeArtifactExecPath(objFile);
     } else {
-      commandLine.addPath(objFile.getExecPath());
+      commandLine.add(objFile.getExecPath());
     }
 
     // Add Dotd file arguments.
     if (dotdFile.isPresent()) {
-      commandLine.add("-MD").addExecPath("-MF", dotdFile.get());
+      commandLine.add("-MD").add("-MF", dotdFile.get());
     }
 
     // Add module map arguments.
@@ -529,10 +531,13 @@ public class LegacyCompilationSupport extends CompilationSupport {
             .setCommandLine(
                 new CustomCommandLine.Builder()
                     .add("-static")
-                    .add("-arch_only").add(appleConfiguration.getSingleArchitecture())
-                    .add("-syslibroot").add(AppleToolchain.sdkDir())
-                    .add("-o").add(outputArchive.getExecPathString())
-                    .addExecPaths(inputArtifacts)
+                    .add("-arch_only")
+                    .add(appleConfiguration.getSingleArchitecture())
+                    .add("-syslibroot")
+                    .add(AppleToolchain.sdkDir())
+                    .add("-o")
+                    .add(outputArchive.getExecPathString())
+                    .add(ImmutableList.copyOf(inputArtifacts))
                     .build())
             .addInputs(inputArtifacts)
             .addOutput(outputArchive)
@@ -660,10 +665,10 @@ public class LegacyCompilationSupport extends CompilationSupport {
       Iterable<Artifact> bazelBuiltLibraries,
       Optional<Artifact> linkmap,
       Optional<Artifact> bitcodeSymbolMap) {
-    Iterable<String> libraryNames = libraryNames(objcProvider);
+    ImmutableList<String> libraryNames = libraryNames(objcProvider);
 
-    CustomCommandLine.Builder commandLine = CustomCommandLine.builder()
-            .addPath(xcrunwrapper(ruleContext).getExecutable().getExecPath());
+    CustomCommandLine.Builder commandLine =
+        CustomCommandLine.builder().add(xcrunwrapper(ruleContext).getExecutable().getExecPath());
     if (objcProvider.is(USES_CPP)) {
       commandLine
         .add(CLANG_PLUSPLUS)
@@ -724,12 +729,16 @@ public class LegacyCompilationSupport extends CompilationSupport {
         .add("@executable_path/Frameworks")
         .add("-fobjc-link-runtime")
         .add(DEFAULT_LINKER_FLAGS)
-        .addBeforeEach("-framework", frameworkNames(objcProvider))
-        .addBeforeEach("-weak_framework", SdkFramework.names(objcProvider.get(WEAK_SDK_FRAMEWORK)))
-        .addFormatEach("-l%s", libraryNames)
-        .addExecPath("-o", linkedBinary)
-        .addBeforeEachExecPath("-force_load", forceLinkArtifacts)
-        .add(extraLinkArgs)
+        .add(
+            VectorArg.of(ImmutableList.copyOf(frameworkNames(objcProvider)))
+                .beforeEach("-framework"))
+        .add(
+            VectorArg.of(SdkFramework.names(objcProvider.get(WEAK_SDK_FRAMEWORK)))
+                .beforeEach("-weak_framework"))
+        .add(VectorArg.of(libraryNames).formatEach("-l%s"))
+        .add("-o", linkedBinary)
+        .add(VectorArg.of(forceLinkArtifacts).beforeEach("-force_load"))
+        .add(ImmutableList.copyOf(extraLinkArgs))
         .add(objcProvider.get(ObjcProvider.LINKOPT));
 
     if (buildConfiguration.isCodeCoverageEnabled()) {
@@ -758,7 +767,7 @@ public class LegacyCompilationSupport extends CompilationSupport {
       PathFragment dsymPath = FileSystemUtils.removeExtension(dsymBundleZip.get().getExecPath());
       commandLine
           .add("&&")
-          .addPath(xcrunwrapper(ruleContext).getExecutable().getExecPath())
+          .add(xcrunwrapper(ruleContext).getExecutable().getExecPath())
           .add(DSYMUTIL)
           .add(linkedBinary.getExecPathString())
           .add("-o " + dsymPath)
@@ -819,8 +828,9 @@ public class LegacyCompilationSupport extends CompilationSupport {
   }
 
   /** Returns a list of clang flags used for all link and compile actions executed through clang. */
-  private List<String> commonLinkAndCompileFlagsForClang(
-      ObjcProvider provider, ObjcConfiguration objcConfiguration,
+  private ImmutableList<String> commonLinkAndCompileFlagsForClang(
+      ObjcProvider provider,
+      ObjcConfiguration objcConfiguration,
       AppleConfiguration appleConfiguration) {
     ImmutableList.Builder<String> builder = new ImmutableList.Builder<>();
     ApplePlatform platform = appleConfiguration.getSingleArchPlatform();

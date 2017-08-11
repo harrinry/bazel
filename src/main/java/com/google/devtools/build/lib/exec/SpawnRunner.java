@@ -21,6 +21,7 @@ import com.google.devtools.build.lib.actions.Spawn;
 import com.google.devtools.build.lib.util.io.FileOutErr;
 import com.google.devtools.build.lib.vfs.PathFragment;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.SortedMap;
 
 /**
@@ -146,7 +147,7 @@ public interface SpawnRunner {
      * again. I suppose we could require implementations to memoize getInputMapping (but not compute
      * it eagerly), and that may change in the future.
      */
-    void prefetchInputs(Iterable<ActionInput> inputs) throws IOException;
+    void prefetchInputs() throws IOException;
 
     /**
      * The input file metadata cache for this specific spawn, which can be used to efficiently
@@ -168,8 +169,14 @@ public interface SpawnRunner {
      */
     void lockOutputFiles() throws InterruptedException;
 
+    /**
+     * Returns whether this spawn may be executing concurrently under multiple spawn runners. If so,
+     * {@link #lockOutputFiles} may raise {@link InterruptedException}.
+     */
+    boolean speculating();
+
     /** Returns the timeout that should be applied for the given {@link Spawn} instance. */
-    long getTimeoutMillis();
+    Duration getTimeout();
 
     /** The files to which to write stdout and stderr. */
     FileOutErr getFileOutErr();

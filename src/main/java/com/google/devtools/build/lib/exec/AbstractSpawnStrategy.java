@@ -14,6 +14,8 @@
 
 package com.google.devtools.build.lib.exec;
 
+import com.google.common.base.Predicates;
+import com.google.common.collect.Iterables;
 import com.google.common.eventbus.EventBus;
 import com.google.devtools.build.lib.actions.ActionExecutionContext;
 import com.google.devtools.build.lib.actions.ActionInput;
@@ -34,22 +36,18 @@ import com.google.devtools.build.lib.util.CommandFailureUtils;
 import com.google.devtools.build.lib.util.io.FileOutErr;
 import com.google.devtools.build.lib.vfs.PathFragment;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.SortedMap;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 /** Abstract common ancestor for spawn strategies implementing the common parts. */
 public abstract class AbstractSpawnStrategy implements SandboxedSpawnActionContext {
-  private final boolean verboseFailures;
   private final SpawnInputExpander spawnInputExpander;
   private final SpawnRunner spawnRunner;
   private final AtomicInteger execCount = new AtomicInteger();
 
-  public AbstractSpawnStrategy(
-      boolean verboseFailures,
-      SpawnRunner spawnRunner) {
-    this.verboseFailures = verboseFailures;
+  public AbstractSpawnStrategy(SpawnRunner spawnRunner) {
     this.spawnInputExpander = new SpawnInputExpander(false);
     this.spawnRunner = spawnRunner;
   }
@@ -69,75 +67,10 @@ public abstract class AbstractSpawnStrategy implements SandboxedSpawnActionConte
     if (actionExecutionContext.reportsSubcommands()) {
       actionExecutionContext.reportSubcommand(spawn);
     }
-    final int timeoutSeconds = Spawns.getTimeoutSeconds(spawn);
-    SpawnExecutionPolicy policy = new SpawnExecutionPolicy() {
-      private final int id = execCount.incrementAndGet();
-
-      @Override
-      public int getId() {
-        return id;
-      }
-
-      @Override
-      public void prefetchInputs(Iterable<ActionInput> inputs) throws IOException {
-        actionExecutionContext.getActionInputPrefetcher().prefetchFiles(inputs);
-      }
-
-      @Override
-      public ActionInputFileCache getActionInputFileCache() {
-        return actionExecutionContext.getActionInputFileCache();
-      }
-
-      @Override
-      public ArtifactExpander getArtifactExpander() {
-        return actionExecutionContext.getArtifactExpander();
-      }
-
-      @Override
-      public void lockOutputFiles() throws InterruptedException {
-        Class<? extends SpawnActionContext> token = AbstractSpawnStrategy.this.getClass();
-        if (writeOutputFiles != null
-            && writeOutputFiles.get() != token
-            && !writeOutputFiles.compareAndSet(null, token)) {
-          throw new InterruptedException();
-        }
-      }
-
-      @Override
-      public long getTimeoutMillis() {
-        return TimeUnit.SECONDS.toMillis(timeoutSeconds);
-      }
-
-      @Override
-      public FileOutErr getFileOutErr() {
-        return actionExecutionContext.getFileOutErr();
-      }
-
-      @Override
-      public SortedMap<PathFragment, ActionInput> getInputMapping() throws IOException {
-        return spawnInputExpander.getInputMapping(
-            spawn,
-            actionExecutionContext.getArtifactExpander(),
-            actionExecutionContext.getActionInputFileCache(),
-            actionExecutionContext.getContext(FilesetActionContext.class));
-      }
-
-      @Override
-      public void report(ProgressStatus state, String name) {
-        // TODO(ulfjack): We should report more details to the UI.
-        EventBus eventBus = actionExecutionContext.getEventBus();
-        switch (state) {
-          case EXECUTING:
-            eventBus.post(ActionStatusMessage.runningStrategy(spawn.getResourceOwner(), name));
-            break;
-          case SCHEDULING:
-            eventBus.post(ActionStatusMessage.schedulingStrategy(spawn.getResourceOwner()));
-            break;
-          default:
-            break;
-        }
-      }
-    };
+    final Duration timeout = Spawns.getTimeout(spawn);
+    SpawnExecutionPolicy policy =
+        new SpawnExecutionPolicyImpl(
+            spawn, actionExecutionContext, writeOutputFiles, timeout);
     SpawnResult result;
     try {
       result = spawnRunner.exec(spawn, policy);
@@ -149,9 +82,114 @@ public abstract class AbstractSpawnStrategy implements SandboxedSpawnActionConte
       String cwd = actionExecutionContext.getExecRoot().getPathString();
       String message =
           CommandFailureUtils.describeCommandFailure(
-              verboseFailures, spawn.getArguments(), spawn.getEnvironment(), cwd);
+              actionExecutionContext.getVerboseFailures(),
+              spawn.getArguments(),
+              spawn.getEnvironment(),
+              cwd);
       throw new SpawnExecException(
           message, result, /*forciblyRunRemotely=*/false, /*catastrophe=*/false);
+    }
+  }
+
+  private final class SpawnExecutionPolicyImpl implements SpawnExecutionPolicy {
+    private final Spawn spawn;
+    private final ActionExecutionContext actionExecutionContext;
+    private final AtomicReference<Class<? extends SpawnActionContext>> writeOutputFiles;
+    private final Duration timeout;
+
+    private final int id = execCount.incrementAndGet();
+    // Memoize the input mapping so that prefetchInputs can reuse it instead of recomputing it.
+    // TODO(ulfjack): Guard against client modification of this map.
+    private SortedMap<PathFragment, ActionInput> lazyInputMapping;
+
+    public SpawnExecutionPolicyImpl(
+        Spawn spawn,
+        ActionExecutionContext actionExecutionContext,
+        AtomicReference<Class<? extends SpawnActionContext>> writeOutputFiles,
+        Duration timeout) {
+      this.spawn = spawn;
+      this.actionExecutionContext = actionExecutionContext;
+      this.writeOutputFiles = writeOutputFiles;
+      this.timeout = timeout;
+    }
+
+    @Override
+    public int getId() {
+      return id;
+    }
+
+    @Override
+    public void prefetchInputs() throws IOException {
+      if (Spawns.shouldPrefetchInputsForLocalExecution(spawn)) {
+        // TODO(philwo): Benchmark whether using an ExecutionService to do multiple operations in
+        // parallel speeds up prefetching of inputs.
+        // TODO(philwo): Do we have to expand middleman artifacts here?
+        actionExecutionContext.getActionInputPrefetcher().prefetchFiles(
+            Iterables.filter(getInputMapping().values(), Predicates.notNull()));
+      }
+    }
+
+    @Override
+    public ActionInputFileCache getActionInputFileCache() {
+      return actionExecutionContext.getActionInputFileCache();
+    }
+
+    @Override
+    public ArtifactExpander getArtifactExpander() {
+      return actionExecutionContext.getArtifactExpander();
+    }
+
+    @Override
+    public void lockOutputFiles() throws InterruptedException {
+      Class<? extends SpawnActionContext> token = AbstractSpawnStrategy.this.getClass();
+      if (writeOutputFiles != null
+          && writeOutputFiles.get() != token
+          && !writeOutputFiles.compareAndSet(null, token)) {
+        throw new InterruptedException();
+      }
+    }
+
+    @Override
+    public boolean speculating() {
+      return writeOutputFiles != null;
+    }
+
+    @Override
+    public Duration getTimeout() {
+      return timeout;
+    }
+
+    @Override
+    public FileOutErr getFileOutErr() {
+      return actionExecutionContext.getFileOutErr();
+    }
+
+    @Override
+    public SortedMap<PathFragment, ActionInput> getInputMapping() throws IOException {
+      if (lazyInputMapping == null) {
+        lazyInputMapping = spawnInputExpander.getInputMapping(
+            spawn,
+            actionExecutionContext.getArtifactExpander(),
+            actionExecutionContext.getActionInputFileCache(),
+            actionExecutionContext.getContext(FilesetActionContext.class));
+      }
+      return lazyInputMapping;
+    }
+
+    @Override
+    public void report(ProgressStatus state, String name) {
+      // TODO(ulfjack): We should report more details to the UI.
+      EventBus eventBus = actionExecutionContext.getEventBus();
+      switch (state) {
+        case EXECUTING:
+          eventBus.post(ActionStatusMessage.runningStrategy(spawn.getResourceOwner(), name));
+          break;
+        case SCHEDULING:
+          eventBus.post(ActionStatusMessage.schedulingStrategy(spawn.getResourceOwner()));
+          break;
+        default:
+          break;
+      }
     }
   }
 }

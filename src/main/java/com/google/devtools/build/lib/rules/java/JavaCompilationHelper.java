@@ -33,12 +33,11 @@ import com.google.devtools.build.lib.analysis.actions.CustomCommandLine;
 import com.google.devtools.build.lib.analysis.actions.SpawnAction;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration.StrictDepsMode;
-import com.google.devtools.build.lib.collect.ImmutableIterable;
+import com.google.devtools.build.lib.analysis.test.InstrumentedFilesCollector;
 import com.google.devtools.build.lib.collect.nestedset.NestedSet;
 import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
 import com.google.devtools.build.lib.packages.AttributeMap;
 import com.google.devtools.build.lib.rules.java.JavaConfiguration.JavaClasspathMode;
-import com.google.devtools.build.lib.rules.test.InstrumentedFilesCollector;
 import com.google.devtools.build.lib.syntax.Type;
 import com.google.devtools.build.lib.util.FileType;
 import com.google.devtools.build.lib.util.Preconditions;
@@ -373,7 +372,7 @@ public final class JavaCompilationHelper {
     builder.addSourceJars(attributes.getSourceJars());
     builder.setClasspathEntries(attributes.getCompileTimeClassPath());
     builder.setBootclasspathEntries(
-        ImmutableIterable.from(Iterables.concat(getBootclasspathOrDefault(), getExtdirInputs())));
+        ImmutableList.copyOf(Iterables.concat(getBootclasspathOrDefault(), getExtdirInputs())));
 
     // only run API-generating annotation processors during header compilation
     builder.setProcessorPaths(attributes.getApiGeneratingProcessorPath());
@@ -464,11 +463,11 @@ public final class JavaCompilationHelper {
                     javaToolchain.getJvmOptions())
                 .setCommandLine(
                     CustomCommandLine.builder()
-                        .addExecPath("--manifest_proto", manifestProto)
-                        .addExecPath("--class_jar", classJar)
-                        .addExecPath("--output_jar", genClassJar)
+                        .add("--manifest_proto", manifestProto)
+                        .add("--class_jar", classJar)
+                        .add("--output_jar", genClassJar)
                         .add("--temp_dir")
-                        .addPath(tempDir(genClassJar))
+                        .add(tempDir(genClassJar))
                         .build())
                 .setProgressMessage("Building genclass jar %s", genClassJar.prettyPrint())
                 .setMnemonic("JavaSourceJar")

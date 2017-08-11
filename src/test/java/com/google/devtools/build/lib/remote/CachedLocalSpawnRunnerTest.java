@@ -49,6 +49,7 @@ import com.google.devtools.common.options.Options;
 import com.google.devtools.remoteexecution.v1test.ActionResult;
 import com.google.devtools.remoteexecution.v1test.Command;
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.SortedMap;
 import org.junit.Before;
@@ -86,7 +87,7 @@ public class CachedLocalSpawnRunnerTest {
         }
 
         @Override
-        public void prefetchInputs(Iterable<ActionInput> inputs) {
+        public void prefetchInputs() {
           // CachedLocalSpawnRunner should never prefetch itself, though the nested SpawnRunner may.
           throw new UnsupportedOperationException();
         }
@@ -94,6 +95,11 @@ public class CachedLocalSpawnRunnerTest {
         @Override
         public void lockOutputFiles() throws InterruptedException {
           throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean speculating() {
+          return false;
         }
 
         @Override
@@ -107,8 +113,8 @@ public class CachedLocalSpawnRunnerTest {
         }
 
         @Override
-        public long getTimeoutMillis() {
-          return 0;
+        public Duration getTimeout() {
+          return Duration.ZERO;
         }
 
         @Override

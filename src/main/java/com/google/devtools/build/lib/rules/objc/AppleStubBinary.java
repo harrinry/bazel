@@ -29,11 +29,12 @@ import com.google.devtools.build.lib.analysis.MakeVariableExpander;
 import com.google.devtools.build.lib.analysis.MakeVariableExpander.ExpansionException;
 import com.google.devtools.build.lib.analysis.RuleConfiguredTarget.Mode;
 import com.google.devtools.build.lib.analysis.RuleConfiguredTargetBuilder;
+import com.google.devtools.build.lib.analysis.RuleConfiguredTargetFactory;
 import com.google.devtools.build.lib.analysis.RuleContext;
 import com.google.devtools.build.lib.analysis.actions.CustomCommandLine;
+import com.google.devtools.build.lib.analysis.actions.CustomCommandLine.Builder;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
 import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
-import com.google.devtools.build.lib.rules.RuleConfiguredTargetFactory;
 import com.google.devtools.build.lib.rules.apple.AppleConfiguration;
 import com.google.devtools.build.lib.rules.apple.ApplePlatform;
 import com.google.devtools.build.lib.rules.apple.ApplePlatform.PlatformType;
@@ -152,10 +153,10 @@ public class AppleStubBinary implements RuleConfiguredTargetFactory {
       Artifact outputBinary)
       throws RuleErrorException {
     CustomCommandLine copyCommandLine =
-        new CustomCommandLine.Builder()
+        new Builder()
             .add("/bin/cp")
             .add(resolveXcenvBasedPath(ruleContext, platform))
-            .addExecPaths(ImmutableList.of(outputBinary))
+            .add(ImmutableList.of(outputBinary))
             .build();
 
     ruleContext.registerAction(

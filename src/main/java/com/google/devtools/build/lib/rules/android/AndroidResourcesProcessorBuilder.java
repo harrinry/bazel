@@ -22,10 +22,12 @@ import com.google.devtools.build.lib.analysis.RuleContext;
 import com.google.devtools.build.lib.analysis.actions.ActionConstructionContext;
 import com.google.devtools.build.lib.analysis.actions.CustomCommandLine;
 import com.google.devtools.build.lib.analysis.actions.CustomCommandLine.Builder;
+import com.google.devtools.build.lib.analysis.actions.CustomCommandLine.VectorArg;
 import com.google.devtools.build.lib.analysis.actions.SpawnAction;
 import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
 import com.google.devtools.build.lib.rules.android.AndroidConfiguration.AndroidAaptVersion;
 import com.google.devtools.build.lib.rules.android.ResourceContainerConverter.Builder.SeparatorType;
+import com.google.devtools.build.lib.util.OS;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -280,16 +282,31 @@ public class AndroidResourcesProcessorBuilder {
     // Set the busybox tool.
     builder.add("--tool").add("AAPT2_PACKAGE").add("--");
 
-    builder.addExecPath("--aapt2", sdk.getAapt2().getExecutable());
+    builder.add("--aapt2", sdk.getAapt2().getExecutable());
     ResourceContainerConverter.convertDependencies(
         dependencies, builder, inputs, AAPT2_RESOURCE_DEP_TO_ARG, AAPT2_RESOURCE_DEP_TO_ARTIFACTS);
 
     configureCommonFlags(outs, inputs, builder);
 
+    if (OS.getCurrent() == OS.WINDOWS) {
+      // Some flags (e.g. --mainData) may specify lists (or lists of lists) separated by special
+      // characters (colon, semicolon, hashmark, ampersand) that don't work on Windows, and quoting
+      // semantics are very complicated (more so than in Bash), so let's just always use a parameter
+      // file.
+      // TODO(laszlocsomor), TODO(corysmith): restructure the Android BusyBux's flags by deprecating
+      // list-type and list-of-list-type flags that use such problematic separators in favor of
+      // multi-value flags (to remove one level of listing) and by changing all list separators to a
+      // platform-safe character (= comma).
+      this.spawnActionBuilder.alwaysUseParameterFile(ParameterFileType.UNQUOTED);
+    } else {
+      this.spawnActionBuilder.useParameterFile(ParameterFileType.UNQUOTED);
+    }
+
     // Create the spawn action.
     ruleContext.registerAction(
         this.spawnActionBuilder
-            .useParameterFile(ParameterFileType.UNQUOTED)
+            .useDefaultShellEnvironment()
+            .useDefaultShellEnvironment()
             .addTool(sdk.getAapt2())
             .addTransitiveInputs(inputs.build())
             .addOutputs(ImmutableList.<Artifact>copyOf(outs))
@@ -328,13 +345,28 @@ public class AndroidResourcesProcessorBuilder {
 
     ResourceContainerConverter.convertDependencies(
         dependencies, builder, inputs, RESOURCE_DEP_TO_ARG, RESOURCE_DEP_TO_ARTIFACTS);
-    builder.addExecPath("--aapt", sdk.getAapt().getExecutable());
+    builder.add("--aapt", sdk.getAapt().getExecutable());
     configureCommonFlags(outs, inputs, builder);
+
+    if (OS.getCurrent() == OS.WINDOWS) {
+      // Some flags (e.g. --mainData) may specify lists (or lists of lists) separated by special
+      // characters (colon, semicolon, hashmark, ampersand) that don't work on Windows, and quoting
+      // semantics are very complicated (more so than in Bash), so let's just always use a parameter
+      // file.
+      // TODO(laszlocsomor), TODO(corysmith): restructure the Android BusyBux's flags by deprecating
+      // list-type and list-of-list-type flags that use such problematic separators in favor of
+      // multi-value flags (to remove one level of listing) and by changing all list separators to a
+      // platform-safe character (= comma).
+      this.spawnActionBuilder.alwaysUseParameterFile(ParameterFileType.UNQUOTED);
+    } else {
+      this.spawnActionBuilder.useParameterFile(ParameterFileType.UNQUOTED);
+    }
 
     // Create the spawn action.
     ruleContext.registerAction(
         this.spawnActionBuilder
-            .useParameterFile(ParameterFileType.UNQUOTED)
+            .useDefaultShellEnvironment()
+            .useDefaultShellEnvironment()
             .addTool(sdk.getAapt())
             .addTransitiveInputs(inputs.build())
             .addOutputs(ImmutableList.copyOf(outs))
@@ -372,10 +404,10 @@ public class AndroidResourcesProcessorBuilder {
       builder.add("--buildToolsVersion").add(sdk.getBuildToolsVersion());
     }
 
-    builder.addExecPath("--annotationJar", sdk.getAnnotationsJar());
+    builder.add("--annotationJar", sdk.getAnnotationsJar());
     inputs.add(sdk.getAnnotationsJar());
 
-    builder.addExecPath("--androidJar", sdk.getAndroidJar());
+    builder.add("--androidJar", sdk.getAndroidJar());
     inputs.add(sdk.getAndroidJar());
 
     if (isLibrary) {
@@ -383,40 +415,40 @@ public class AndroidResourcesProcessorBuilder {
     }
 
     if (rTxtOut != null) {
-      builder.addExecPath("--rOutput", rTxtOut);
+      builder.add("--rOutput", rTxtOut);
       outs.add(rTxtOut);
     }
 
     if (symbols != null) {
-      builder.addExecPath("--symbolsOut", symbols);
+      builder.add("--symbolsOut", symbols);
       outs.add(symbols);
     }
     if (sourceJarOut != null) {
-      builder.addExecPath("--srcJarOutput", sourceJarOut);
+      builder.add("--srcJarOutput", sourceJarOut);
       outs.add(sourceJarOut);
     }
     if (proguardOut != null) {
-      builder.addExecPath("--proguardOutput", proguardOut);
+      builder.add("--proguardOutput", proguardOut);
       outs.add(proguardOut);
     }
 
     if (mainDexProguardOut != null) {
-      builder.addExecPath("--mainDexProguardOutput", mainDexProguardOut);
+      builder.add("--mainDexProguardOutput", mainDexProguardOut);
       outs.add(mainDexProguardOut);
     }
 
     if (manifestOut != null) {
-      builder.addExecPath("--manifestOutput", manifestOut);
+      builder.add("--manifestOutput", manifestOut);
       outs.add(manifestOut);
     }
 
     if (mergedResourcesOut != null) {
-      builder.addExecPath("--resourcesOutput", mergedResourcesOut);
+      builder.add("--resourcesOutput", mergedResourcesOut);
       outs.add(mergedResourcesOut);
     }
 
     if (apkOut != null) {
-      builder.addExecPath("--packagePath", apkOut);
+      builder.add("--packagePath", apkOut);
       outs.add(apkOut);
     }
     if (resourceFilter.hasConfigurationFilters() && !resourceFilter.isPrefiltering()) {
@@ -427,16 +459,19 @@ public class AndroidResourcesProcessorBuilder {
     }
     ImmutableList<String> filteredResources = resourceFilter.getResourcesToIgnoreInExecution();
     if (!filteredResources.isEmpty()) {
-      builder.addJoinStrings("--prefilteredResources", ",", filteredResources);
+      builder.add("--prefilteredResources", VectorArg.of(filteredResources).joinWith(","));
     }
     if (!uncompressedExtensions.isEmpty()) {
-      builder.addJoinStrings("--uncompressedExtensions", ",", uncompressedExtensions);
+      builder.add(
+          "--uncompressedExtensions",
+          VectorArg.of(ImmutableList.copyOf(uncompressedExtensions)).joinWith(","));
     }
     if (!crunchPng) {
       builder.add("--useAaptCruncher=no");
     }
     if (!assetsToIgnore.isEmpty()) {
-      builder.addJoinStrings("--assetsToIgnore", ",", assetsToIgnore);
+      builder.add(
+          "--assetsToIgnore", VectorArg.of(ImmutableList.copyOf(assetsToIgnore)).joinWith(","));
     }
     if (debug) {
       builder.add("--debug");
@@ -455,7 +490,7 @@ public class AndroidResourcesProcessorBuilder {
     }
 
     if (dataBindingInfoZip != null) {
-      builder.addExecPath("--dataBindingInfoOut", dataBindingInfoZip);
+      builder.add("--dataBindingInfoOut", dataBindingInfoZip);
       outs.add(dataBindingInfoZip);
     }
 
@@ -466,12 +501,12 @@ public class AndroidResourcesProcessorBuilder {
     }
 
     if (featureOf != null) {
-      builder.addExecPath("--featureOf", featureOf);
+      builder.add("--featureOf", featureOf);
       inputs.add(featureOf);
     }
 
     if (featureAfter != null) {
-      builder.addExecPath("--featureAfter", featureAfter);
+      builder.add("--featureAfter", featureAfter);
       inputs.add(featureAfter);
     }
 

@@ -69,7 +69,6 @@ import com.google.devtools.build.lib.analysis.config.BinTools;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
 import com.google.devtools.build.lib.analysis.config.BuildConfigurationCollection;
 import com.google.devtools.build.lib.analysis.config.BuildOptions;
-import com.google.devtools.build.lib.analysis.config.ConfigurationFactory;
 import com.google.devtools.build.lib.analysis.config.ConfigurationFragmentFactory;
 import com.google.devtools.build.lib.analysis.config.HostTransition;
 import com.google.devtools.build.lib.analysis.config.InvalidConfigurationException;
@@ -83,7 +82,6 @@ import com.google.devtools.build.lib.concurrent.ThreadSafety.ThreadCompatible;
 import com.google.devtools.build.lib.events.ErrorSensingEventHandler;
 import com.google.devtools.build.lib.events.ExtendedEventHandler;
 import com.google.devtools.build.lib.events.Reporter;
-import com.google.devtools.build.lib.exec.OutputService;
 import com.google.devtools.build.lib.packages.AspectDescriptor;
 import com.google.devtools.build.lib.packages.AstAfterPreprocessing;
 import com.google.devtools.build.lib.packages.Attribute;
@@ -280,7 +278,6 @@ public abstract class SkyframeExecutor implements WalkableGraphFactory {
       new SkyframeIncrementalBuildMonitor();
 
   protected final MutableSupplier<Boolean> removeActionsAfterEvaluation = new MutableSupplier<>();
-  private MutableSupplier<ConfigurationFactory> configurationFactory = new MutableSupplier<>();
   private MutableSupplier<ImmutableList<ConfigurationFragmentFactory>> configurationFragments =
       new MutableSupplier<>();
 
@@ -430,7 +427,7 @@ public abstract class SkyframeExecutor implements WalkableGraphFactory {
     map.put(SkyFunctions.BUILD_CONFIGURATION,
         new BuildConfigurationFunction(directories, ruleClassProvider));
     map.put(SkyFunctions.CONFIGURATION_COLLECTION, new ConfigurationCollectionFunction(
-        configurationFactory, ruleClassProvider));
+        null, ruleClassProvider));
     map.put(SkyFunctions.CONFIGURATION_FRAGMENT, new ConfigurationFragmentFunction(
         configurationFragments, ruleClassProvider));
     map.put(SkyFunctions.WORKSPACE_NAME, new WorkspaceNameFunction());
@@ -1052,11 +1049,11 @@ public abstract class SkyframeExecutor implements WalkableGraphFactory {
   }
 
   /**
-   * Sets the configuration factory and known fragment set.
+   * Sets the factories for all configuration fragments known to the build.
    */
-  public void setConfigurationFactory(ConfigurationFactory configurationFactory) {
-    this.configurationFactory.set(configurationFactory);
-    this.configurationFragments.set(ImmutableList.copyOf(configurationFactory.getFactories()));
+  public void setConfigurationFragmentFactories(
+      List<ConfigurationFragmentFactory> configurationFragmentFactories) {
+    this.configurationFragments.set(ImmutableList.copyOf(configurationFragmentFactories));
   }
 
   /**
@@ -1065,18 +1062,13 @@ public abstract class SkyframeExecutor implements WalkableGraphFactory {
    */
   public BuildConfigurationCollection createConfigurations(
       ExtendedEventHandler eventHandler,
-      ConfigurationFactory configurationFactory,
+      List<ConfigurationFragmentFactory> configurationFragmentFactories,
       BuildOptions buildOptions,
       Set<String> multiCpu,
       boolean keepGoing)
       throws InvalidConfigurationException, InterruptedException {
-    setConfigurationFactory(configurationFactory);
-    if (buildOptions.get(BuildConfiguration.Options.class).useDynamicConfigurations
-        == BuildConfiguration.Options.DynamicConfigsMode.OFF) {
-      return createStaticConfigurations(eventHandler, buildOptions, multiCpu, keepGoing);
-    } else {
-      return createDynamicConfigurations(eventHandler, buildOptions, multiCpu);
-    }
+    setConfigurationFragmentFactories(configurationFragmentFactories);
+    return createDynamicConfigurations(eventHandler, buildOptions, multiCpu);
   }
 
   /**

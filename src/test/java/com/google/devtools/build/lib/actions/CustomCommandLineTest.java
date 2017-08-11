@@ -27,9 +27,12 @@ import com.google.devtools.build.lib.analysis.actions.CommandLine;
 import com.google.devtools.build.lib.analysis.actions.CustomCommandLine;
 import com.google.devtools.build.lib.analysis.actions.CustomCommandLine.CustomArgv;
 import com.google.devtools.build.lib.analysis.actions.CustomCommandLine.CustomMultiArgv;
+import com.google.devtools.build.lib.analysis.actions.CustomCommandLine.VectorArg;
 import com.google.devtools.build.lib.cmdline.Label;
 import com.google.devtools.build.lib.cmdline.LabelSyntaxException;
+import com.google.devtools.build.lib.collect.nestedset.NestedSet;
 import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
+import com.google.devtools.build.lib.collect.nestedset.Order;
 import com.google.devtools.build.lib.testutil.Scratch;
 import com.google.devtools.build.lib.vfs.PathFragment;
 import java.util.Collection;
@@ -79,8 +82,10 @@ public class CustomCommandLineTest {
 
   @Test
   public void testArtifactJoinStringArgs() {
-    CustomCommandLine cl = CustomCommandLine.builder().addJoinStrings("--path", ":",
-        ImmutableList.of("foo", "bar")).build();
+    CustomCommandLine cl =
+        CustomCommandLine.builder()
+            .add("--path", VectorArg.of(ImmutableList.of("foo", "bar")).joinWith(":"))
+            .build();
     assertThat(cl.arguments()).isEqualTo(ImmutableList.of("--path", "foo:bar"));
   }
 
@@ -88,66 +93,77 @@ public class CustomCommandLineTest {
   public void testJoinValues() {
     CustomCommandLine cl =
         CustomCommandLine.builder()
-            .addJoinValues(
+            .add(
                 "--path",
-                ":",
-                ImmutableList.of("foo", "bar", "baz"),
-                new Function<String, String>() {
-                  @Nullable
-                  @Override
-                  public String apply(@Nullable String s) {
-                    return s.toUpperCase();
-                  }
-                })
+                VectorArg.of(ImmutableList.of("foo", "bar", "baz"))
+                    .joinWith(":")
+                    .mapEach(
+                        new Function<String, String>() {
+                          @Nullable
+                          @Override
+                          public String apply(@Nullable String s) {
+                            return s.toUpperCase();
+                          }
+                        }))
             .build();
     assertThat(cl.arguments()).isEqualTo(ImmutableList.of("--path", "FOO:BAR:BAZ"));
   }
 
   @Test
   public void testArtifactExecPathArgs() {
-    CustomCommandLine cl = CustomCommandLine.builder().addExecPath("--path", artifact1).build();
+    CustomCommandLine cl = CustomCommandLine.builder().add("--path", artifact1).build();
     assertThat(cl.arguments()).isEqualTo(ImmutableList.of("--path", "dir/file1.txt"));
   }
 
   @Test
   public void testArtifactExecPathsArgs() {
-    CustomCommandLine cl = CustomCommandLine.builder().addExecPaths("--path",
-        ImmutableList.of(artifact1, artifact2)).build();
+    CustomCommandLine cl =
+        CustomCommandLine.builder().add("--path", ImmutableList.of(artifact1, artifact2)).build();
     assertThat(cl.arguments())
         .isEqualTo(ImmutableList.of("--path", "dir/file1.txt", "dir/file2.txt"));
   }
 
   @Test
   public void testNestedSetArtifactExecPathsArgs() {
-    CustomCommandLine cl = CustomCommandLine.builder().addExecPaths(
-        NestedSetBuilder.<Artifact>stableOrder().add(artifact1).add(artifact2).build()).build();
+    CustomCommandLine cl =
+        CustomCommandLine.builder()
+            .add(NestedSetBuilder.<Artifact>stableOrder().add(artifact1).add(artifact2).build())
+            .build();
     assertThat(cl.arguments()).isEqualTo(ImmutableList.of("dir/file1.txt", "dir/file2.txt"));
   }
 
   @Test
   public void testArtifactJoinExecPathArgs() {
-    CustomCommandLine cl = CustomCommandLine.builder().addJoinExecPaths("--path", ":",
-        ImmutableList.of(artifact1, artifact2)).build();
+    CustomCommandLine cl =
+        CustomCommandLine.builder()
+            .add("--path", VectorArg.of(ImmutableList.of(artifact1, artifact2)).joinWith(":"))
+            .build();
     assertThat(cl.arguments()).isEqualTo(ImmutableList.of("--path", "dir/file1.txt:dir/file2.txt"));
   }
 
   @Test
   public void testPathArgs() {
-    CustomCommandLine cl = CustomCommandLine.builder().addPath(artifact1.getExecPath()).build();
+    CustomCommandLine cl = CustomCommandLine.builder().add(artifact1.getExecPath()).build();
     assertThat(cl.arguments()).isEqualTo(ImmutableList.of("dir/file1.txt"));
   }
 
   @Test
   public void testJoinPathArgs() {
-    CustomCommandLine cl = CustomCommandLine.builder().addJoinPaths(":",
-        ImmutableList.of(artifact1.getExecPath(), artifact2.getExecPath())).build();
+    CustomCommandLine cl =
+        CustomCommandLine.builder()
+            .add(
+                VectorArg.of(ImmutableList.of(artifact1.getExecPath(), artifact2.getExecPath()))
+                    .joinWith(":"))
+            .build();
     assertThat(cl.arguments()).isEqualTo(ImmutableList.of("dir/file1.txt:dir/file2.txt"));
   }
 
   @Test
   public void testPathsArgs() {
-    CustomCommandLine cl = CustomCommandLine.builder().addPaths("%s:%s",
-        artifact1.getExecPath(), artifact1.getRootRelativePath()).build();
+    CustomCommandLine cl =
+        CustomCommandLine.builder()
+            .addFormatted("%s:%s", artifact1.getExecPath(), artifact1.getRootRelativePath())
+            .build();
     assertThat(cl.arguments()).isEqualTo(ImmutableList.of("dir/file1.txt:dir/file1.txt"));
   }
 
@@ -175,12 +191,13 @@ public class CustomCommandLineTest {
 
   @Test
   public void testCombinedArgs() {
-    CustomCommandLine cl = CustomCommandLine.builder()
-        .add("--arg")
-        .add("--args", ImmutableList.of("abc"))
-        .addExecPaths("--path1", ImmutableList.of(artifact1))
-        .addExecPath("--path2", artifact2)
-        .build();
+    CustomCommandLine cl =
+        CustomCommandLine.builder()
+            .add("--arg")
+            .add("--args", ImmutableList.of("abc"))
+            .add("--path1", ImmutableList.of(artifact1))
+            .add("--path2", artifact2)
+            .build();
     assertThat(cl.arguments())
         .isEqualTo(
             ImmutableList.of(
@@ -194,50 +211,30 @@ public class CustomCommandLineTest {
 
     CustomCommandLine cl =
         CustomCommandLine.builder()
-            .add((CharSequence) null)
-            .add((Label) null)
-            .add("foo", null)
-            .add("foo", ImmutableList.of())
-            .add((Iterable<String>) null)
+            .add((Object) null)
+            .add("foo", (Object) null)
+            .add((ImmutableList<String>) null)
             .add(ImmutableList.<String>of())
-            .addExecPath("foo", null)
-            .addExecPaths("foo", (Iterable<Artifact>) null)
-            .addExecPaths("foo", ImmutableList.<Artifact>of())
-            .addExecPaths(null)
-            .addExecPaths(ImmutableList.of())
+            .add((NestedSet<String>) null)
+            .add(NestedSetBuilder.<String>emptySet(Order.STABLE_ORDER))
+            .add("foo", (ImmutableList<String>) null)
+            .add("foo", ImmutableList.<String>of())
+            .add("foo", (NestedSet<String>) null)
+            .add("foo", NestedSetBuilder.<String>emptySet(Order.STABLE_ORDER))
+            .add(VectorArg.of((ImmutableList<String>) null))
+            .add(VectorArg.of(ImmutableList.<String>of()))
+            .add(VectorArg.of((NestedSet<String>) null))
+            .add(VectorArg.of(NestedSetBuilder.<String>emptySet(Order.STABLE_ORDER)))
+            .add("foo", VectorArg.of((ImmutableList<String>) null))
+            .add("foo", VectorArg.of(ImmutableList.<String>of()))
+            .add("foo", VectorArg.of((NestedSet<String>) null))
+            .add("foo", VectorArg.of(NestedSetBuilder.<String>emptySet(Order.STABLE_ORDER)))
             .addPlaceholderTreeArtifactExecPath("foo", null)
-            .addJoinStrings("foo", "bar", null)
-            .addJoinStrings("foo", "bar", ImmutableList.of())
-            .addJoinValues("foo", "bar", null, String::toString)
-            .addJoinValues("foo", "bar", ImmutableList.of(), String::toString)
-            .addJoinExecPaths("foo", "bar", null)
-            .addJoinExecPaths("foo", "bar", ImmutableList.of())
-            .addPath(null)
             .addPlaceholderTreeArtifactFormattedExecPath("foo", null)
-            .addJoinPaths("foo", null)
-            .addJoinPaths("foo", ImmutableList.of())
-            .addBeforeEachPath("foo", null)
-            .addBeforeEachPath("foo", ImmutableList.of())
-            .addBeforeEach("foo", null)
-            .addBeforeEach("foo", ImmutableList.of())
-            .addBeforeEachExecPath("foo", null)
-            .addBeforeEachExecPath("foo", ImmutableList.of())
-            .addFormatEach("%s", null)
-            .addFormatEach("%s", ImmutableList.of())
             .add((CustomArgv) null)
             .add((CustomMultiArgv) null)
             .build();
     assertThat(cl.arguments()).isEmpty();
-
-    assertThat(
-            CustomCommandLine.builder()
-                .addPaths("foo")
-                .addPaths("bar", (PathFragment[]) null)
-                .addPaths("baz", new PathFragment[0])
-                .build()
-                .arguments())
-        .containsExactly("foo", "baz")
-        .inOrder();
 
     CustomCommandLine.Builder obj = CustomCommandLine.builder();
     Class<CustomCommandLine.Builder> clazz = CustomCommandLine.Builder.class;
@@ -247,40 +244,22 @@ public class CustomCommandLineTest {
             .setDefault(String.class, "foo")
             .setDefault(PathFragment[].class, new PathFragment[] {PathFragment.create("foo")});
 
-    npt.testMethod(obj, clazz.getMethod("add", String.class, Iterable.class));
-    npt.testMethod(obj, clazz.getMethod("addExecPath", String.class, Artifact.class));
-    npt.testMethod(obj, clazz.getMethod("addExecPaths", String.class, Iterable.class));
+    npt.testMethod(obj, clazz.getMethod("add", String.class, Object.class));
     npt.testMethod(
         obj, clazz.getMethod("addPlaceholderTreeArtifactExecPath", String.class, Artifact.class));
     npt.testMethod(
         obj,
         clazz.getMethod(
             "addPlaceholderTreeArtifactFormattedExecPath", String.class, Artifact.class));
-    npt.testMethod(obj, clazz.getMethod("addParamFile", String.class, Artifact.class));
-    npt.testMethod(obj, clazz.getMethod("addPaths", String.class, PathFragment[].class));
     npt.testMethod(
         obj, clazz.getMethod("addJoinExpandedTreeArtifactExecPath", String.class, Artifact.class));
     npt.testMethod(obj, clazz.getMethod("addExpandedTreeArtifactExecPaths", Artifact.class));
 
     npt.setDefault(Iterable.class, ImmutableList.of("foo"));
-    npt.testMethod(
-        obj, clazz.getMethod("addJoinStrings", String.class, String.class, Iterable.class));
-    npt.testMethod(
-        obj,
-        clazz.getMethod(
-            "addJoinValues", String.class, String.class, Iterable.class, Function.class));
-    npt.testMethod(obj, clazz.getMethod("addBeforeEach", String.class, Iterable.class));
-    npt.testMethod(obj, clazz.getMethod("addFormatEach", String.class, Iterable.class));
 
     npt.setDefault(Iterable.class, ImmutableList.of(artifact1));
-    npt.testMethod(
-        obj, clazz.getMethod("addJoinExecPaths", String.class, String.class, Iterable.class));
-    npt.testMethod(obj, clazz.getMethod("addBeforeEachExecPath", String.class, Iterable.class));
 
     npt.setDefault(Iterable.class, ImmutableList.of(PathFragment.create("foo")));
-    npt.testMethod(obj, clazz.getMethod("addJoinPaths", String.class, Iterable.class));
-    npt.testMethod(obj, clazz.getMethod("addBeforeEachPath", String.class, Iterable.class));
-
     npt.setDefault(Artifact.class, treeArtifact);
     npt.testMethod(
         obj, clazz.getMethod("addJoinExpandedTreeArtifactExecPath", String.class, Artifact.class));

@@ -20,6 +20,7 @@ import com.google.common.base.Verify;
 import com.google.common.base.VerifyException;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.LinkedHashMultimap;
 import com.google.common.collect.LinkedListMultimap;
@@ -71,7 +72,6 @@ import com.google.devtools.build.lib.skyframe.AspectFunction.AspectCreationExcep
 import com.google.devtools.build.lib.skyframe.AspectValue.AspectKey;
 import com.google.devtools.build.lib.skyframe.SkyframeExecutor.BuildViewProvider;
 import com.google.devtools.build.lib.skyframe.ToolchainUtil.ToolchainContextException;
-import com.google.devtools.build.lib.skyframe.ToolchainUtil.UnresolvedToolchainsException;
 import com.google.devtools.build.lib.syntax.EvalException;
 import com.google.devtools.build.lib.util.OrderedSetMultimap;
 import com.google.devtools.build.lib.util.Preconditions;
@@ -100,9 +100,9 @@ import javax.annotation.Nullable;
  * SkyFunction for {@link ConfiguredTargetValue}s.
  *
  * <p>This class, together with {@link AspectFunction} drives the analysis phase. For more
- * information, see {@link com.google.devtools.build.lib.rules.RuleConfiguredTargetFactory}.
+ * information, see {@link com.google.devtools.build.lib.analysis.RuleConfiguredTargetFactory}.
  *
- * @see com.google.devtools.build.lib.rules.RuleConfiguredTargetFactory
+ * @see com.google.devtools.build.lib.analysis.RuleConfiguredTargetFactory
  */
 public final class ConfiguredTargetFunction implements SkyFunction {
   // This construction is a bit funky, but guarantees that the Object reference here is globally
@@ -178,7 +178,7 @@ public final class ConfiguredTargetFunction implements SkyFunction {
       target = pkg.getTarget(lc.getLabel().getName());
     } catch (NoSuchTargetException e) {
       throw new ConfiguredTargetFunctionException(
-          new ConfiguredValueCreationException(e.getMessage()));
+          new ConfiguredValueCreationException(e.getMessage(), lc.getLabel()));
     }
     if (pkg.containsErrors()) {
       transitiveLoadingRootCauses.add(lc.getLabel());
@@ -206,6 +206,8 @@ public final class ConfiguredTargetFunction implements SkyFunction {
 
     SkyframeDependencyResolver resolver = view.createDependencyResolver(env);
 
+    ToolchainContext toolchainContext = null;
+
     // TODO(janakr): this acquire() call may tie up this thread indefinitely, reducing the
     // parallelism of Skyframe. This is a strict improvement over the prior state of the code, in
     // which we ran with #processors threads, but ideally we would call #tryAcquire here, and if we
@@ -232,7 +234,6 @@ public final class ConfiguredTargetFunction implements SkyFunction {
       }
 
       // Determine what toolchains are needed by this target.
-      ToolchainContext toolchainContext = null;
       if (target instanceof Rule) {
         Rule rule = ((Rule) target);
         ImmutableList<Label> requiredToolchains = rule.getRuleClassObject().getRequiredToolchains();
@@ -278,18 +279,42 @@ public final class ConfiguredTargetFunction implements SkyFunction {
       return ans;
     } catch (DependencyEvaluationException e) {
       if (e.getCause() instanceof ConfiguredValueCreationException) {
-        throw new ConfiguredTargetFunctionException(
-            (ConfiguredValueCreationException) e.getCause());
+        ConfiguredValueCreationException cvce = (ConfiguredValueCreationException) e.getCause();
+
+        // Check if this is caused by an unresolved toolchain, and report it as such.
+        if (toolchainContext != null) {
+          ImmutableSet.Builder<Label> causes = new ImmutableSet.Builder<Label>();
+          if (cvce.getAnalysisRootCause() != null) {
+            causes.add(cvce.getAnalysisRootCause());
+          }
+          if (!cvce.getRootCauses().isEmpty()) {
+            causes.addAll(cvce.getRootCauses());
+          }
+          Set<Label> toolchainDependencyErrors =
+              toolchainContext.filterToolchainLabels(causes.build());
+          if (!toolchainDependencyErrors.isEmpty()) {
+            env.getListener()
+                .handle(
+                    Event.error(
+                        String.format(
+                            "While resolving toolchains for target %s: %s",
+                            target.getLabel(), e.getCause().getMessage())));
+          }
+        }
+
+        throw new ConfiguredTargetFunctionException(cvce);
       } else if (e.getCause() instanceof InconsistentAspectOrderException) {
         InconsistentAspectOrderException cause = (InconsistentAspectOrderException) e.getCause();
         throw new ConfiguredTargetFunctionException(
             new ConfiguredValueCreationException(cause.getMessage(), target.getLabel()));
-      } else {
-        // Cast to InvalidConfigurationException as a consistency check. If you add any
-        // DependencyEvaluationException constructors, you may need to change this code, too.
+      } else if (e.getCause() instanceof InvalidConfigurationException) {
         InvalidConfigurationException cause = (InvalidConfigurationException) e.getCause();
         throw new ConfiguredTargetFunctionException(
             new ConfiguredValueCreationException(cause.getMessage(), target.getLabel()));
+      } else {
+        // Unknown exception type.
+        throw new ConfiguredTargetFunctionException(
+            new ConfiguredValueCreationException(e.getMessage(), target.getLabel()));
       }
     } catch (AspectCreationException e) {
       // getAnalysisRootCause may be null if the analysis of the aspect itself failed.
@@ -300,20 +325,21 @@ public final class ConfiguredTargetFunction implements SkyFunction {
       throw new ConfiguredTargetFunctionException(
           new ConfiguredValueCreationException(e.getMessage(), analysisRootCause));
     } catch (ToolchainContextException e) {
-      if (e.getCause() instanceof UnresolvedToolchainsException) {
-        UnresolvedToolchainsException ute = (UnresolvedToolchainsException) e.getCause();
-        env.getListener()
-            .handle(Event.error(ute.getMessage() + " for target " + target.getLabel()));
-        throw new ConfiguredTargetFunctionException(
-            new ConfiguredValueCreationException(ute.getMessage(), target.getLabel()));
-      } else if (e.getCause() instanceof ConfiguredValueCreationException) {
-        ConfiguredValueCreationException cvce = (ConfiguredValueCreationException) e.getCause();
-        throw new ConfiguredTargetFunctionException(cvce);
+      // We need to throw a ConfiguredValueCreationException, so either find one or make one.
+      ConfiguredValueCreationException cvce;
+      if (e.getCause() instanceof ConfiguredValueCreationException) {
+        cvce = (ConfiguredValueCreationException) e.getCause();
       } else {
-        // TODO(katre): better error handling
-        throw new ConfiguredTargetFunctionException(
-            new ConfiguredValueCreationException(e.getMessage()));
+        cvce = new ConfiguredValueCreationException(e.getCause().getMessage(), target.getLabel());
       }
+
+      env.getListener()
+          .handle(
+              Event.error(
+                  String.format(
+                      "While resolving toolchains for target %s: %s",
+                      target.getLabel(), e.getCause().getMessage())));
+      throw new ConfiguredTargetFunctionException(cvce);
     } finally {
       cpuBoundSemaphore.release();
     }
@@ -983,6 +1009,10 @@ public final class ConfiguredTargetFunction implements SkyFunction {
 
   static boolean aspectMatchesConfiguredTarget(final ConfiguredTarget dep, Aspect aspect) {
     if (!aspect.getDefinition().applyToFiles() && !(dep.getTarget() instanceof Rule)) {
+      return false;
+    }
+    if (dep.getTarget().getAssociatedRule() == null) {
+      // even aspects that 'apply to files' cannot apply to input files.
       return false;
     }
     return dep.satisfies(aspect.getDefinition().getRequiredProviders());

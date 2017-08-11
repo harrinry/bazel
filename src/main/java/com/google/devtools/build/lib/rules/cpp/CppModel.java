@@ -25,6 +25,7 @@ import com.google.devtools.build.lib.analysis.RuleConfiguredTarget.Mode;
 import com.google.devtools.build.lib.analysis.RuleContext;
 import com.google.devtools.build.lib.analysis.TransitiveInfoCollection;
 import com.google.devtools.build.lib.analysis.config.BuildConfiguration;
+import com.google.devtools.build.lib.analysis.test.InstrumentedFilesCollector;
 import com.google.devtools.build.lib.cmdline.Label;
 import com.google.devtools.build.lib.packages.BuildType;
 import com.google.devtools.build.lib.packages.RuleClass.ConfiguredTargetFactory.RuleErrorException;
@@ -39,7 +40,6 @@ import com.google.devtools.build.lib.rules.cpp.Link.LinkTargetType;
 import com.google.devtools.build.lib.rules.cpp.Link.Picness;
 import com.google.devtools.build.lib.rules.cpp.Link.Staticness;
 import com.google.devtools.build.lib.rules.cpp.LinkerInputs.LibraryToLink;
-import com.google.devtools.build.lib.rules.test.InstrumentedFilesCollector;
 import com.google.devtools.build.lib.util.FileType;
 import com.google.devtools.build.lib.util.Preconditions;
 import com.google.devtools.build.lib.vfs.FileSystemUtils;
@@ -1268,9 +1268,7 @@ public final class CppModel {
           SolibSymlinkAction.getDynamicLibrarySoname(soImpl.getRootRelativePath(), false));
     }
 
-    // Should we also link in any libraries that this library depends on?
-    // That is required on some systems...
-    CppLinkActionBuilder linkActionBuilder =
+    CppLinkActionBuilder dynamicLinkActionBuilder =
         newLinkActionBuilder(soImpl)
             .setInterfaceOutput(soInterface)
             .addObjectFiles(ccOutputs.getObjectFiles(usePicForSharedLibs))
@@ -1290,29 +1288,29 @@ public final class CppModel {
 
     if (!ccOutputs.getLtoBitcodeFiles().isEmpty()
         && featureConfiguration.isEnabled(CppRuleClasses.THIN_LTO)) {
-      linkActionBuilder.setLtoIndexing(true);
-      linkActionBuilder.setUsePicForLtoBackendActions(usePicForSharedLibs);
+      dynamicLinkActionBuilder.setLtoIndexing(true);
+      dynamicLinkActionBuilder.setUsePicForLtoBackendActions(usePicForSharedLibs);
       // If support is ever added for generating a dwp file for shared
       // library targets (e.g. when linkstatic=0), then this should change
       // to generate dwo files when cppConfiguration.useFission(),
       // and the dwp generating action for the shared library should
       // include all of the resulting dwo files.
-      linkActionBuilder.setUseFissionForLtoBackendActions(false);
-      CppLinkAction indexAction = linkActionBuilder.build();
+      dynamicLinkActionBuilder.setUseFissionForLtoBackendActions(false);
+      CppLinkAction indexAction = dynamicLinkActionBuilder.build();
       env.registerAction(indexAction);
 
-      linkActionBuilder.setLtoIndexing(false);
+      dynamicLinkActionBuilder.setLtoIndexing(false);
     }
 
-    CppLinkAction action = linkActionBuilder.build();
-    env.registerAction(action);
+    CppLinkAction dynamicLinkAction = dynamicLinkActionBuilder.build();
+    env.registerAction(dynamicLinkAction);
 
     if (linkType == LinkTargetType.EXECUTABLE) {
       return result.build();
     }
 
-    LibraryToLink dynamicLibrary = action.getOutputLibrary();
-    LibraryToLink interfaceLibrary = action.getInterfaceOutputLibrary();
+    LibraryToLink dynamicLibrary = dynamicLinkAction.getOutputLibrary();
+    LibraryToLink interfaceLibrary = dynamicLinkAction.getInterfaceOutputLibrary();
     if (interfaceLibrary == null) {
       interfaceLibrary = dynamicLibrary;
     }

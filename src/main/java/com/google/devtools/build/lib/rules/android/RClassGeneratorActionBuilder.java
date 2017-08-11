@@ -23,11 +23,13 @@ import com.google.devtools.build.lib.actions.ParameterFile.ParameterFileType;
 import com.google.devtools.build.lib.analysis.RuleConfiguredTarget.Mode;
 import com.google.devtools.build.lib.analysis.RuleContext;
 import com.google.devtools.build.lib.analysis.actions.CustomCommandLine;
+import com.google.devtools.build.lib.analysis.actions.CustomCommandLine.VectorArg;
 import com.google.devtools.build.lib.analysis.actions.SpawnAction;
 import com.google.devtools.build.lib.collect.nestedset.NestedSet;
 import com.google.devtools.build.lib.collect.nestedset.NestedSetBuilder;
 import com.google.devtools.build.lib.collect.nestedset.Order;
 import com.google.devtools.build.lib.rules.android.AndroidConfiguration.AndroidAaptVersion;
+import com.google.devtools.build.lib.util.OS;
 import java.util.ArrayList;
 import java.util.List;
 import javax.annotation.Nullable;
@@ -87,11 +89,11 @@ public class RClassGeneratorActionBuilder {
 
     List<Artifact> outs = new ArrayList<>();
     if (primary.getRTxt() != null) {
-      builder.addExecPath("--primaryRTxt", primary.getRTxt());
+      builder.add("--primaryRTxt", primary.getRTxt());
       inputs.add(primary.getRTxt());
     }
     if (primary.getManifest() != null) {
-      builder.addExecPath("--primaryManifest", primary.getManifest());
+      builder.add("--primaryManifest", primary.getManifest());
       inputs.add(primary.getManifest());
     }
     if (!Strings.isNullOrEmpty(primary.getJavaPackage())) {
@@ -101,8 +103,11 @@ public class RClassGeneratorActionBuilder {
       // TODO(corysmith): Remove NestedSet as we are already flattening it.
       Iterable<ResourceContainer> depResources = dependencies.getResources();
       if (!Iterables.isEmpty(depResources)) {
-        builder.addBeforeEach(
-            "--library", Iterables.transform(depResources, chooseDepsToArg(version)));
+        builder.add(
+            VectorArg.of(
+                    ImmutableList.copyOf(
+                        Iterables.transform(depResources, chooseDepsToArg(version))))
+                .beforeEach("--library"));
         inputs.addTransitive(
             NestedSetBuilder.wrap(
                 Order.NAIVE_LINK_ORDER,
@@ -110,17 +115,32 @@ public class RClassGeneratorActionBuilder {
                     .transformAndConcat(chooseDepsToArtifacts(version))));
       }
     }
-    builder.addExecPath("--classJarOutput", classJarOut);
+    builder.add("--classJarOutput", classJarOut);
     outs.add(classJarOut);
 
     // Create the spawn action.
     SpawnAction.Builder spawnActionBuilder = new SpawnAction.Builder();
+
+    if (OS.getCurrent() == OS.WINDOWS) {
+      // Some flags (e.g. --mainData) may specify lists (or lists of lists) separated by special
+      // characters (colon, semicolon, hashmark, ampersand) that don't work on Windows, and quoting
+      // semantics are very complicated (more so than in Bash), so let's just always use a parameter
+      // file.
+      // TODO(laszlocsomor), TODO(corysmith): restructure the Android BusyBux's flags by deprecating
+      // list-type and list-of-list-type flags that use such problematic separators in favor of
+      // multi-value flags (to remove one level of listing) and by changing all list separators to a
+      // platform-safe character (= comma).
+      spawnActionBuilder.alwaysUseParameterFile(ParameterFileType.UNQUOTED);
+    } else {
+      spawnActionBuilder.useParameterFile(ParameterFileType.SHELL_QUOTED);
+    }
+
     ruleContext.registerAction(
         spawnActionBuilder
-            .useParameterFile(ParameterFileType.UNQUOTED)
+            .useParameterFile(ParameterFileType.SHELL_QUOTED)
+            .useDefaultShellEnvironment()
             .addTransitiveInputs(inputs.build())
             .addOutputs(ImmutableList.<Artifact>copyOf(outs))
-            .useParameterFile(ParameterFileType.SHELL_QUOTED)
             .setCommandLine(builder.build())
             .setExecutable(
                 ruleContext.getExecutablePrerequisite("$android_resources_busybox", Mode.HOST))

@@ -18,8 +18,6 @@ import static java.util.logging.Level.INFO;
 import static java.util.logging.Level.SEVERE;
 
 import com.google.common.base.Joiner;
-import com.google.common.base.Predicates;
-import com.google.common.collect.Iterables;
 import com.google.common.io.ByteStreams;
 import com.google.devtools.build.lib.actions.ActionExecutionMetadata;
 import com.google.devtools.build.lib.actions.ResourceManager;
@@ -42,6 +40,7 @@ import com.google.devtools.build.lib.util.io.FileOutErr;
 import com.google.devtools.build.lib.vfs.Path;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
@@ -229,21 +228,24 @@ public final class LocalSpawnRunner implements SpawnRunner {
       if (Spawns.shouldPrefetchInputsForLocalExecution(spawn)) {
         stepLog(INFO, "prefetching inputs for local execution");
         setState(State.PREFETCHING_LOCAL_INPUTS);
-        policy.prefetchInputs(
-            Iterables.filter(policy.getInputMapping().values(), Predicates.notNull()));
+        policy.prefetchInputs();
       }
 
       stepLog(INFO, "running locally");
       setState(State.LOCAL_ACTION_RUNNING);
 
-      int timeoutSeconds = (int) (policy.getTimeoutMillis() / 1000);
       Command cmd;
       OutputStream stdOut = ByteStreams.nullOutputStream();
       OutputStream stdErr = ByteStreams.nullOutputStream();
       if (useProcessWrapper) {
+        // If the process wrapper is enabled, we use its timeout feature, which first interrupts the
+        // subprocess and only kills it after a grace period so that the subprocess can output a
+        // stack trace, test log or similar, which is incredibly helpful for debugging. The process
+        // wrapper also supports output file redirection, so we don't need to stream the output
+        // through this process.
         List<String> cmdLine = new ArrayList<>();
         cmdLine.add(processWrapper);
-        cmdLine.add("--timeout=" + timeoutSeconds);
+        cmdLine.add("--timeout=" + policy.getTimeout().getSeconds());
         cmdLine.add("--kill_delay=" + localExecutionOptions.localSigkillGraceSeconds);
         cmdLine.add("--stdout=" + getPathOrDevNull(outErr.getOutputPath()));
         cmdLine.add("--stderr=" + getPathOrDevNull(outErr.getErrorPath()));
@@ -259,13 +261,13 @@ public final class LocalSpawnRunner implements SpawnRunner {
             spawn.getArguments().toArray(new String[0]),
             localEnvProvider.rewriteLocalEnv(spawn.getEnvironment(), execRoot, productName),
             execRoot.getPathFile(),
-            policy.getTimeoutMillis());
+            policy.getTimeout());
       }
 
       long startTime = System.currentTimeMillis();
       CommandResult result;
       try {
-        result = cmd.execute(Command.NO_INPUT, Command.NO_OBSERVER, stdOut, stdErr, true);
+        result = cmd.execute(stdOut, stdErr);
         if (Thread.currentThread().isInterrupted()) {
           throw new InterruptedException();
         }
@@ -289,9 +291,9 @@ public final class LocalSpawnRunner implements SpawnRunner {
       }
       setState(State.SUCCESS);
 
-      long wallTime = System.currentTimeMillis() - startTime;
+      long wallTimeMillis = System.currentTimeMillis() - startTime;
       boolean wasTimeout = result.getTerminationStatus().timedout()
-          || (useProcessWrapper && wasTimeout(timeoutSeconds, wallTime));
+          || (useProcessWrapper && wasTimeout(policy.getTimeout(), wallTimeMillis));
       Status status = wasTimeout ? Status.TIMEOUT : Status.SUCCESS;
       int exitCode = status == Status.TIMEOUT
           ? POSIX_TIMEOUT_EXIT_CODE
@@ -300,7 +302,7 @@ public final class LocalSpawnRunner implements SpawnRunner {
           .setStatus(status)
           .setExitCode(exitCode)
           .setExecutorHostname(hostName)
-          .setWallTimeMillis(wallTime)
+          .setWallTimeMillis(wallTimeMillis)
           .build();
     }
 
@@ -308,8 +310,8 @@ public final class LocalSpawnRunner implements SpawnRunner {
       return path == null ? "/dev/null" : path.getPathString();
     }
 
-    private boolean wasTimeout(int timeoutSeconds, long wallTimeMillis) {
-      return timeoutSeconds > 0 && wallTimeMillis / 1000.0 > timeoutSeconds;
+    private boolean wasTimeout(Duration timeout, long wallTimeMillis) {
+      return !timeout.isZero() && wallTimeMillis > timeout.toMillis();
     }
   }
 
