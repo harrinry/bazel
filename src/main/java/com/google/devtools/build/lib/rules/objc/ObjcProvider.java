@@ -18,7 +18,6 @@ import static com.google.devtools.build.lib.collect.nestedset.Order.LINK_ORDER;
 import static com.google.devtools.build.lib.collect.nestedset.Order.STABLE_ORDER;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Optional;
 import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
 import com.google.common.collect.ImmutableList;
@@ -168,30 +167,8 @@ public final class ObjcProvider extends Info {
       new Key<>(STABLE_ORDER, "asset_catalog", Artifact.class);
 
   /**
-   * Added to {@link TargetControl#getGeneralResourceFileList()} when running Xcodegen.
-   */
-  public static final Key<Artifact> GENERAL_RESOURCE_FILE =
-      new Key<>(STABLE_ORDER, "general_resource_file", Artifact.class);
-
-  /**
-   * Resource directories added to {@link TargetControl#getGeneralResourceFileList()} when running
-   * Xcodegen. When copying files inside resource directories to the app bundle, XCode will preserve
-   * the directory structures of the copied files.
-   */
-  public static final Key<PathFragment> GENERAL_RESOURCE_DIR =
-      new Key<>(STABLE_ORDER, "general_resource_dir", PathFragment.class);
-
-  /**
-   * Exec paths of {@code .bundle} directories corresponding to imported bundles to link.
-   * These are passed to Xcodegen.
-   */
-  public static final Key<PathFragment> BUNDLE_IMPORT_DIR =
-      new Key<>(STABLE_ORDER, "bundle_import_dir", PathFragment.class);
-
-  /**
-   * Files that are plopped into the final bundle at some arbitrary bundle path. Note that these are
-   * not passed to Xcodegen, and these don't include information about where the file originated
-   * from.
+   * Files that are plopped into the final bundle at some arbitrary bundle path. Do not include
+   * information about where the file originated from.
    */
   public static final Key<BundleableFile> BUNDLE_FILE =
       new Key<>(STABLE_ORDER, "bundle_file", BundleableFile.class);
@@ -397,7 +374,6 @@ public final class ObjcProvider extends Info {
       ImmutableList.<Key<?>>of(
           ASSET_CATALOG,
           BUNDLE_FILE,
-          BUNDLE_IMPORT_DIR,
           DEFINE,
           DYNAMIC_FRAMEWORK_DIR,
           DYNAMIC_FRAMEWORK_FILE,
@@ -406,8 +382,6 @@ public final class ObjcProvider extends Info {
           EXPORTED_DEBUG_ARTIFACTS,
           FRAMEWORK_SEARCH_PATH_ONLY,
           FORCE_LOAD_LIBRARY,
-          GENERAL_RESOURCE_DIR,
-          GENERAL_RESOURCE_FILE,
           HEADER,
           IMPORTED_LIBRARY,
           INCLUDE,
@@ -748,19 +722,6 @@ public final class ObjcProvider extends Info {
         Map<Key<?>, NestedSetBuilder<?>> set) {
       maybeAddEmptyBuilder(set, key);
       set.get(key).addTransitive(toAdd);
-    }
-
-    /**
-     * Convenience method to add a modulemap to this ObjcProvider.
-     */
-    public Builder addModuleMap(CppModuleMap moduleMap) {
-      Optional<Artifact> umbrellaHeader = moduleMap.getUmbrellaHeader();
-      if (umbrellaHeader.isPresent()) {
-        add(UMBRELLA_HEADER, umbrellaHeader.get());
-      }
-      add(MODULE_MAP, moduleMap.getArtifact());
-      add(TOP_LEVEL_MODULE_MAP, moduleMap);
-      return this;
     }
 
     /**

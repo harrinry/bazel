@@ -19,7 +19,6 @@ import static com.google.common.truth.Truth.assertWithMessage;
 import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.baseArtifactNames;
 import static com.google.devtools.build.lib.actions.util.ActionsTestUtil.getFirstArtifactEndingWith;
 import static com.google.devtools.build.lib.rules.objc.LegacyCompilationSupport.AUTOMATIC_SDK_FRAMEWORKS;
-import static com.google.devtools.build.lib.rules.objc.ObjcProvider.GENERAL_RESOURCE_FILE;
 import static com.google.devtools.build.lib.rules.objc.ObjcProvider.HEADER;
 import static com.google.devtools.build.lib.rules.objc.ObjcProvider.INCLUDE;
 import static com.google.devtools.build.lib.rules.objc.ObjcProvider.MODULE_MAP;
@@ -2123,8 +2122,6 @@ public abstract class ObjcRuleTestCase extends BuildViewTestCase {
         getSourceArtifact("x/subdir_for_no_reason/en.lproj/loc.storyboard"),
         getSourceArtifact("x/ja.lproj/loc.storyboard"));
 
-    assertThat(provider.get(GENERAL_RESOURCE_FILE))
-        .containsExactlyElementsIn(storyboardInputs);
     assertThat(provider.get(STORYBOARD))
         .containsExactlyElementsIn(storyboardInputs);
   }
@@ -2160,10 +2157,9 @@ public abstract class ObjcRuleTestCase extends BuildViewTestCase {
         .containsExactlyElementsIn(
             new Builder()
                 .add(MOCK_IBTOOLWRAPPER_PATH)
-                .add(storyboardZip.getExecPathString())
-                .add(archiveRoot) // archive root
-                .add("--minimum-deployment-target")
-                .add(minimumOsVersion.toString())
+                .addExecPath(storyboardZip)
+                .addDynamicString(archiveRoot) // archive root
+                .add("--minimum-deployment-target", minimumOsVersion.toString())
                 .add("--module")
                 .add("x")
                 .add(VectorArg.of(targetDevices).beforeEach("--target-device"))
@@ -2184,10 +2180,9 @@ public abstract class ObjcRuleTestCase extends BuildViewTestCase {
         .containsExactlyElementsIn(
             new Builder()
                 .add(MOCK_IBTOOLWRAPPER_PATH)
-                .add(storyboardZip.getExecPathString())
-                .add(archiveRoot) // archive root
-                .add("--minimum-deployment-target")
-                .add(minimumOsVersion.toString())
+                .addExecPath(storyboardZip)
+                .addDynamicString(archiveRoot) // archive root
+                .add("--minimum-deployment-target", minimumOsVersion.toString())
                 .add("--module")
                 .add("x")
                 .add(VectorArg.of(targetDevices).beforeEach("--target-device"))
@@ -2218,18 +2213,14 @@ public abstract class ObjcRuleTestCase extends BuildViewTestCase {
         CustomCommandLine.builder().add(MOCK_SWIFTSTDLIBTOOLWRAPPER_PATH);
 
     if (toolchain != null) {
-      expectedCommandLine.add("--toolchain").add(toolchain);
+      expectedCommandLine.add("--toolchain", toolchain);
     }
 
     expectedCommandLine
-        .add("--output_zip_path")
-        .add(swiftLibsZip.getExecPathString())
-        .add("--bundle_path")
-        .add(bundlePath)
-        .add("--platform")
-        .add(platformName)
-        .add("--scan-executable")
-        .add(binary.getExecPathString());
+        .addExecPath("--output_zip_path", swiftLibsZip)
+        .add("--bundle_path", bundlePath)
+        .add("--platform", platformName)
+        .addExecPath("--scan-executable", binary);
 
     assertThat(toolAction.getArguments()).isEqualTo(expectedCommandLine.build().arguments());
   }
@@ -3879,7 +3870,7 @@ public abstract class ObjcRuleTestCase extends BuildViewTestCase {
         .isEqualTo(
             new CustomCommandLine.Builder()
                 .add(MOCK_IBTOOLWRAPPER_PATH)
-                .add(storyboardZip.getExecPathString())
+                .addExecPath(storyboardZip)
                 .add("launch.storyboardc")
                 .add("--minimum-deployment-target")
                 .add("8.1")

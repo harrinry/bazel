@@ -174,10 +174,13 @@ public class ParserTest extends EvaluationTestCase {
 
   @Test
   public void testFuncallExpr() throws Exception {
-    FuncallExpression e = (FuncallExpression) parseExpression("foo(1, 2, bar=wiz)");
+    FuncallExpression e = (FuncallExpression) parseExpression("foo[0](1, 2, bar=wiz)");
 
-    Identifier ident = e.getFunction();
-    assertThat(ident.getName()).isEqualTo("foo");
+    IndexExpression function = (IndexExpression) e.getFunction();
+    Identifier functionList = (Identifier) function.getObject();
+    assertThat(functionList.getName()).isEqualTo("foo");
+    IntegerLiteral listIndex = (IntegerLiteral) function.getKey();
+    assertThat(listIndex.getValue()).isEqualTo(0);
 
     assertThat(e.getArguments()).hasSize(3);
     assertThat(e.getNumPositionalArguments()).isEqualTo(2);
@@ -199,8 +202,8 @@ public class ParserTest extends EvaluationTestCase {
     FuncallExpression e =
       (FuncallExpression) parseExpression("foo.foo(1, 2, bar=wiz)");
 
-    Identifier ident = e.getFunction();
-    assertThat(ident.getName()).isEqualTo("foo");
+    DotExpression dotExpression = (DotExpression) e.getFunction();
+    assertThat(dotExpression.getField().getName()).isEqualTo("foo");
 
     assertThat(e.getArguments()).hasSize(3);
     assertThat(e.getNumPositionalArguments()).isEqualTo(2);
@@ -222,8 +225,8 @@ public class ParserTest extends EvaluationTestCase {
     FuncallExpression e =
       (FuncallExpression) parseExpression("foo.replace().split(1)");
 
-    Identifier ident = e.getFunction();
-    assertThat(ident.getName()).isEqualTo("split");
+    DotExpression dotExpr = (DotExpression) e.getFunction();
+    assertThat(dotExpr.getField().getName()).isEqualTo("split");
 
     assertThat(e.getArguments()).hasSize(1);
     assertThat(e.getNumPositionalArguments()).isEqualTo(1);
@@ -244,8 +247,8 @@ public class ParserTest extends EvaluationTestCase {
   public void testStringMethExpr() throws Exception {
     FuncallExpression e = (FuncallExpression) parseExpression("'foo'.foo()");
 
-    Identifier ident = e.getFunction();
-    assertThat(ident.getName()).isEqualTo("foo");
+    DotExpression dotExpression = (DotExpression) e.getFunction();
+    assertThat(dotExpression.getField().getName()).isEqualTo("foo");
 
     assertThat(e.getArguments()).isEmpty();
   }
@@ -287,15 +290,16 @@ public class ParserTest extends EvaluationTestCase {
   @Test
   public void testSubstring() throws Exception {
     SliceExpression s = (SliceExpression) parseExpression("'FOO.CC'[:].lower()[1:]");
-    assertThat(((IntegerLiteral) s.getStart()).value).isEqualTo(1);
+    assertThat(((IntegerLiteral) s.getStart()).getValue()).isEqualTo(1);
 
     FuncallExpression e = (FuncallExpression) parseExpression(
         "'FOO.CC'.lower()[1:].startswith('oo')");
-    assertThat(e.getFunction().getName()).isEqualTo("startswith");
+    DotExpression dotExpression = (DotExpression) e.getFunction();
+    assertThat(dotExpression.getField().getName()).isEqualTo("startswith");
     assertThat(e.getArguments()).hasSize(1);
 
     s = (SliceExpression) parseExpression("'FOO.CC'[1:][:2]");
-    assertThat(((IntegerLiteral) s.getEnd()).value).isEqualTo(2);
+    assertThat(((IntegerLiteral) s.getEnd()).getValue()).isEqualTo(2);
   }
 
   @Test
@@ -336,7 +340,7 @@ public class ParserTest extends EvaluationTestCase {
 
     // Test that the actual parameters are: (1, $error$, 3):
 
-    Identifier ident = e.getFunction();
+    Identifier ident = (Identifier) e.getFunction();
     assertThat(ident.getName()).isEqualTo("f");
 
     assertThat(e.getArguments()).hasSize(3);

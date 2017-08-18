@@ -29,7 +29,6 @@ import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.Interner;
 import com.google.common.collect.Interners;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.MutableClassToInstanceMap;
@@ -41,7 +40,6 @@ import com.google.devtools.build.lib.analysis.ConfiguredRuleClassProvider;
 import com.google.devtools.build.lib.analysis.Dependency;
 import com.google.devtools.build.lib.analysis.RuleContext;
 import com.google.devtools.build.lib.analysis.actions.FileWriteAction;
-import com.google.devtools.build.lib.analysis.config.BuildConfigurationCollection.Transitions;
 import com.google.devtools.build.lib.buildeventstream.BuildEvent;
 import com.google.devtools.build.lib.buildeventstream.BuildEventConverters;
 import com.google.devtools.build.lib.buildeventstream.BuildEventId;
@@ -60,7 +58,6 @@ import com.google.devtools.build.lib.packages.Attribute.Transition;
 import com.google.devtools.build.lib.packages.InputFile;
 import com.google.devtools.build.lib.packages.PackageGroup;
 import com.google.devtools.build.lib.packages.Rule;
-import com.google.devtools.build.lib.packages.RuleClass;
 import com.google.devtools.build.lib.packages.RuleClassProvider;
 import com.google.devtools.build.lib.packages.RuleTransitionFactory;
 import com.google.devtools.build.lib.packages.Target;
@@ -89,12 +86,9 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Queue;
 import java.util.Set;
 import java.util.TreeMap;
 import javax.annotation.Nullable;
@@ -454,8 +448,7 @@ public final class BuildConfiguration implements BuildEvent {
    * even if they don't affect the value of the BuildConfiguration instances.)
    *
    * <p>IMPORTANT: when adding new options, be sure to consider whether those
-   * values should be propagated to the host configuration or not (see
-   * {@link ConfigurationFactory#getConfiguration}.
+   * values should be propagated to the host configuration or not.
    *
    * <p>ALSO IMPORTANT: all option types MUST define a toString method that
    * gives identical results for semantically identical option values. The
@@ -1063,10 +1056,7 @@ public final class BuildConfiguration implements BuildEvent {
       }
 
       // === Runfiles ===
-      // Ideally we could force this the other way, and skip runfiles construction
-      // for host tools which are never run locally, but that's probably a very
-      // small optimization.
-      host.buildRunfiles = true;
+      host.buildRunfiles = buildRunfiles;
 
       // === Linkstamping ===
       // Disable all link stamping for the host configuration, to improve action
@@ -1100,9 +1090,6 @@ public final class BuildConfiguration implements BuildEvent {
   }
 
   private final String checksum;
-
-  private Transitions transitions;
-  private Set<BuildConfiguration> allReachableConfigurations;
 
   private final ImmutableMap<Class<? extends Fragment>, Fragment> fragments;
   private final ImmutableMap<String, Class<? extends Fragment>> skylarkVisibleFragments;
@@ -1274,20 +1261,6 @@ public final class BuildConfiguration implements BuildEvent {
     if (this == other) {
       return true;
     }
-    if (!useDynamicConfigurations()) {
-      // Static configurations aren't safe for value equality because they include transition
-      // references to other configurations (see setConfigurationTransitions). For example, imagine
-      // in one build target config A has a reference to data config B. Now imagine a second build
-      // where target config C has a reference to data config D. If A and B are value-equal, that
-      // means a call to ConfiguredTargetKey("//foo", C) might return the SkyKey for ("//foo", A).
-      // This is not just possible but *likely* due to SkyKey interning (see
-      // SkyKey.SKY_KEY_INTERNER). This means a data transition on that config could incorrectly
-      // return B, which is not safe because B is not necessarily value-equal to D.
-      //
-      // This becomes safe with dynamic configurations: transitions are completely triggered by
-      // external logic and configs have no awareness of them at all.
-      return false;
-    }
     if (!(other instanceof BuildConfiguration)) {
       return false;
     }
@@ -1303,9 +1276,6 @@ public final class BuildConfiguration implements BuildEvent {
 
   @Override
   public int hashCode() {
-    if (!useDynamicConfigurations()) {
-      return BuildConfiguration.super.hashCode();
-    }
     return hashCode;
   }
 
@@ -1604,82 +1574,6 @@ public final class BuildConfiguration implements BuildEvent {
   }
 
   /**
-   * Set the outgoing configuration transitions. During the lifetime of a given build configuration,
-   * this must happen exactly once, shortly after the configuration is created.
-   */
-  public void setConfigurationTransitions(Transitions transitions) {
-    // TODO(bazel-team): This method makes the object mutable - get rid of it. Dynamic
-    // configurations should eventually make this obsolete.
-    Preconditions.checkNotNull(transitions);
-    Preconditions.checkState(this.transitions == null);
-    this.transitions = transitions;
-  }
-
-  public Transitions getTransitions() {
-    return transitions;
-  }
-
-  /**
-   * For static configurations, returns all configurations that can be reached from this one through
-   * any kind of configuration transition.
-   *
-   * <p>For dynamic configurations, returns the current configuration (since configurations aren't
-   * reached through other configurations).
-   */
-  public synchronized Collection<BuildConfiguration> getAllReachableConfigurations() {
-    if (allReachableConfigurations == null) {
-      // This is needed for every configured target in skyframe m2, so we cache it.
-      // We could alternatively make the corresponding dependencies into a skyframe node.
-      this.allReachableConfigurations = computeAllReachableConfigurations();
-    }
-    return allReachableConfigurations;
-  }
-
-  private Set<BuildConfiguration> computeAllReachableConfigurations() {
-    if (useDynamicConfigurations()) {
-      return ImmutableSet.of(this);
-    }
-    Set<BuildConfiguration> result = new LinkedHashSet<>();
-    Queue<BuildConfiguration> queue = new LinkedList<>();
-    queue.add(this);
-    while (!queue.isEmpty()) {
-      BuildConfiguration config = queue.remove();
-      if (!result.add(config)) {
-        continue;
-      }
-      config.getTransitions().addDirectlyReachableConfigurations(queue);
-    }
-    return result;
-  }
-
-  /**
-   * Returns the new configuration after traversing a dependency edge with a given configuration
-   * transition.
-   *
-   * @param transition the configuration transition
-   * @return the new configuration
-   * @throws IllegalArgumentException if the transition is a {@link SplitTransition}
-   *
-   * TODO(bazel-team): remove this as part of the static -> dynamic configuration migration
-   */
-  public BuildConfiguration getConfiguration(Transition transition) {
-    Preconditions.checkArgument(!(transition instanceof SplitTransition));
-    // The below call precondition-checks we're indeed using static configurations.
-    return transitions.getStaticConfiguration(transition);
-  }
-
-  /**
-   * Returns the new configurations after traversing a dependency edge with a given split
-   * transition.
-   *
-   * @param transition the split configuration transition
-   * @return the new configurations
-   */
-  public List<BuildConfiguration> getSplitConfigurations(SplitTransition<?> transition) {
-    return transitions.getSplitConfigurations(transition);
-  }
-
-  /**
    * A common interface for static vs. dynamic configuration implementations that allows
    * common configuration and transition-selection logic to seamlessly work with either.
    *
@@ -1712,8 +1606,7 @@ public final class BuildConfiguration implements BuildEvent {
     void applyAttributeConfigurator(Configurator<BuildOptions> configurator);
 
     /**
-     * Calls {@link Transitions#configurationHook} on the current configuration(s) represent by
-     * this instance.
+     * Applies a custom configuration hook for the given rule.
      */
     void applyConfigurationHook(Rule fromRule, Attribute attribute, Target toTarget);
 
@@ -1744,23 +1637,12 @@ public final class BuildConfiguration implements BuildEvent {
 
     @Override
     public void applyTransition(Transition transition) {
-      if (transition == Attribute.ConfigurationTransition.NULL) {
-        toConfigurations = Lists.<BuildConfiguration>asList(null, new BuildConfiguration[0]);
-      } else {
-        ImmutableList.Builder<BuildConfiguration> newConfigs = ImmutableList.builder();
-        for (BuildConfiguration currentConfig : toConfigurations) {
-          newConfigs.add(currentConfig.getTransitions().getStaticConfiguration(transition));
-        }
-        toConfigurations = newConfigs.build();
-      }
+      throw new UnsupportedOperationException("dead static config code being removed");
     }
 
     @Override
     public void split(SplitTransition<BuildOptions> splitTransition) {
-      // Split transitions can't be nested, so if we're splitting we must be doing it over
-      // a single config.
-      toConfigurations =
-          Iterables.getOnlyElement(toConfigurations).getSplitConfigurations(splitTransition);
+      throw new UnsupportedOperationException("dead static config code being removed");
     }
 
     @Override
@@ -1780,27 +1662,7 @@ public final class BuildConfiguration implements BuildEvent {
 
     @Override
     public void applyConfigurationHook(Rule fromRule, Attribute attribute, Target toTarget) {
-      ImmutableList.Builder<BuildConfiguration> toConfigs = ImmutableList.builder();
-      for (BuildConfiguration currentConfig : toConfigurations) {
-        // BuildConfigurationCollection.configurationHook can apply further transitions. We want
-        // those transitions to only affect currentConfig (not everything in toConfigurations), so
-        // we use a delegate bound to only that config.
-        StaticTransitionApplier delegate = new StaticTransitionApplier(currentConfig);
-        currentConfig.getTransitions().configurationHook(fromRule, attribute, toTarget, delegate);
-        currentConfig = Iterables.getOnlyElement(delegate.toConfigurations);
-
-        // Allow rule classes to override their own configurations.
-        Rule associatedRule = toTarget.getAssociatedRule();
-        if (associatedRule != null) {
-          @SuppressWarnings("unchecked")
-          RuleClass.Configurator<BuildConfiguration, Rule> func =
-              associatedRule.getRuleClassObject().<BuildConfiguration, Rule>getConfigurator();
-          currentConfig = func.apply(associatedRule, currentConfig);
-        }
-
-        toConfigs.add(currentConfig);
-      }
-      toConfigurations = toConfigs.build();
+      throw new UnsupportedOperationException("dead static config code being removed");
     }
 
     @Override
@@ -1957,22 +1819,6 @@ public final class BuildConfiguration implements BuildEvent {
           }
         }
       }
-
-      /**
-       * Dynamic configurations don't support rule class configurators (which may need intermediate
-       * configurations to apply). The only current use of that is LIPO, which dynamic
-       * configurations have a different code path for:
-       * {@link com.google.devtools.build.lib.rules.cpp.CppRuleClasses.LIPO_ON_DEMAND}.
-       *
-       * So just check that if there is a configurator, it's for LIPO, in which case we can ignore
-       * it.
-       */
-      if (associatedRule != null) {
-        @SuppressWarnings("unchecked")
-        RuleClass.Configurator<?, ?> func =
-            associatedRule.getRuleClassObject().getConfigurator();
-        Verify.verify(func == RuleClass.NO_CHANGE || func.getCategory().equals("lipo"));
-      }
     }
 
     @Override
@@ -1993,9 +1839,7 @@ public final class BuildConfiguration implements BuildEvent {
    * Returns the {@link TransitionApplier} that should be passed to {#evaluateTransition} calls.
    */
   public TransitionApplier getTransitionApplier() {
-    return useDynamicConfigurations()
-        ? new DynamicTransitionApplier(dynamicTransitionMapper)
-        : new StaticTransitionApplier(this);
+    return new DynamicTransitionApplier(dynamicTransitionMapper);
   }
 
   /**
@@ -2509,17 +2353,6 @@ public final class BuildConfiguration implements BuildEvent {
   }
 
   /**
-   * Returns whether we should use dynamically instantiated build configurations vs. static
-   * configurations (e.g. predefined in {@link
-   * com.google.devtools.build.lib.analysis.ConfigurationCollectionFactory}).
-   */
-  @Deprecated
-  public boolean useDynamicConfigurations() {
-    // TODO(gregce): remove this interface, which is now redundant.
-    return true;
-  }
-
-  /**
    * Returns whether we should trim dynamic configurations to only include the fragments needed
    * to correctly analyze a rule.
    */
@@ -2613,12 +2446,9 @@ public final class BuildConfiguration implements BuildEvent {
   /**
    * Returns the transition that produces the "artifact owner" for this configuration, or null
    * if this configuration is its own owner.
-   *
-   * <p>This is the dynamic configuration version of {@link #getArtifactOwnerConfiguration}.
    */
   @Nullable
   public PatchTransition getArtifactOwnerTransition() {
-    Preconditions.checkState(useDynamicConfigurations());
     PatchTransition ownerTransition = null;
     for (Fragment fragment : fragments.values()) {
       PatchTransition fragmentTransition = fragment.getArtifactOwnerTransition();
@@ -2633,16 +2463,6 @@ public final class BuildConfiguration implements BuildEvent {
       }
     }
     return ownerTransition;
-  }
-
-  /**
-   * See {@code BuildConfigurationCollection.Transitions.getArtifactOwnerConfiguration()}.
-   *
-   * <p>This is the static configuration version of {@link #getArtifactOwnerTransition}.
-   */
-  public BuildConfiguration getArtifactOwnerConfiguration() {
-    Preconditions.checkState(!useDynamicConfigurations());
-    return transitions.getArtifactOwnerConfiguration();
   }
 
   /**

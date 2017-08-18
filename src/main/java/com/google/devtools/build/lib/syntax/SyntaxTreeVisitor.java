@@ -56,9 +56,6 @@ public class SyntaxTreeVisitor {
   }
 
   public void visit(FuncallExpression node) {
-    if (node.getObject() != null) {
-      visit(node.getObject());
-    }
     visit(node.getFunction());
     visitAll(node.getArguments());
   }
@@ -133,6 +130,9 @@ public class SyntaxTreeVisitor {
 
   public void visit(ReturnStatement node) {
     visit(node.getReturnExpression());
+  }
+
+  public void visit(FlowStatement node) {
   }
 
   public void visit(DictionaryLiteral node) {

@@ -379,15 +379,10 @@ public abstract class DependencyResolver {
         // ever looking at the split.
         Verify.verify(attribute.getConfigurator() == null);
 
-        Iterable<BuildConfiguration> splitConfigs;
-        if (!ruleConfig.useDynamicConfigurations()) {
-          splitConfigs = ruleConfig
-              .getSplitConfigurations(attribute.getSplitTransition(depResolver.rule));
-        } else {
-          splitConfigs = getConfigurations(ruleConfig.fragmentClasses(), splitOptions);
-          if (splitConfigs == null) {
-            continue; // Need Skyframe deps.
-          }
+        Iterable<BuildConfiguration> splitConfigs =
+            getConfigurations(ruleConfig.fragmentClasses(), splitOptions);
+        if (splitConfigs == null) {
+          continue; // Need Skyframe deps.
         }
         for (BuildConfiguration splitConfig : splitConfigs) {
           for (Label dep : resolveLateBoundAttribute(depResolver.rule, attribute,
@@ -774,7 +769,7 @@ public abstract class DependencyResolver {
       AspectCollection aspects =
           requiredAspects(this.aspects, attributeAndOwner, toTarget, rule);
       Dependency dep;
-      if (config.useDynamicConfigurations() && !applyNullTransition) {
+      if (!applyNullTransition) {
         // Pass a transition rather than directly feeding the configuration so deps get trimmed.
         dep = Dependency.withTransitionAndAspects(
             depLabel, new FixedTransition(config.getOptions()), aspects);

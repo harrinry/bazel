@@ -118,11 +118,17 @@ class RemoteSpawnRunner implements SpawnRunner {
               ? remoteCache.getCachedActionResult(actionKey)
               : null;
       if (cachedResult != null) {
+        if (cachedResult.getExitCode() != 0) {
+          // The remote cache must never serve a failed action.
+          throw new EnvironmentalExecException("The remote cache is in an invalid state as it"
+              + " served a failed action. Hash of the action: " + actionKey.getDigest());
+        }
         try {
           return downloadRemoteResults(cachedResult, policy.getFileOutErr());
         } catch (CacheNotFoundException e) {
-          // Intentionally left empty. No cache hit, so we fall through to local or
-          // remote execution.
+          // No cache hit, so we fall through to local or remote execution.
+          // We set acceptCachedResult to false in order to force the action re-execution.
+          acceptCachedResult = false;
         }
       }
     } catch (IOException e) {
@@ -324,12 +330,5 @@ class RemoteSpawnRunner implements SpawnRunner {
       }
     }
     return outputFiles;
-  }
-
-  /** Release resources associated with this spawn runner. */
-  public void close() {
-    if (remoteCache != null) {
-      remoteCache.close();
-    }
   }
 }

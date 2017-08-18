@@ -142,6 +142,12 @@ public class EvaluationTest extends EvaluationTestCase {
   }
 
   @Test
+  public void testComplexFunctionCall() throws Exception {
+    newTest().setUp("functions = [min, max]", "l = [1,2]")
+        .testEval("(functions[0](l), functions[1](l))", "(1, 2)");
+  }
+
+  @Test
   public void testKeywordArgs() throws Exception {
 
     // This function returns the map of keyword arguments passed to it.
@@ -694,7 +700,7 @@ public class EvaluationTest extends EvaluationTestCase {
 
   @Test
   public void testDictKeysDuplicateKeyArgs() throws Exception {
-    newTest().testIfExactError("duplicate keywords 'arg', 'k' in call to keys",
+    newTest().testIfExactError("duplicate keywords 'arg', 'k' in call to {\"a\": 1}.keys",
         "{'a': 1}.keys(arg='abc', arg='def', k=1, k=2)");
   }
 

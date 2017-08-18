@@ -15,7 +15,6 @@
 package com.google.devtools.build.lib.analysis.actions;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.base.Objects;
 import com.google.common.collect.ImmutableCollection;
@@ -26,16 +25,21 @@ import com.google.common.collect.Lists;
 import com.google.devtools.build.lib.actions.Artifact;
 import com.google.devtools.build.lib.actions.Artifact.ArtifactExpander;
 import com.google.devtools.build.lib.actions.Artifact.TreeFileArtifact;
+import com.google.devtools.build.lib.cmdline.Label;
 import com.google.devtools.build.lib.collect.nestedset.NestedSet;
 import com.google.devtools.build.lib.concurrent.BlazeInterners;
 import com.google.devtools.build.lib.concurrent.ThreadSafety.Immutable;
+import com.google.devtools.build.lib.util.LazyString;
 import com.google.devtools.build.lib.util.Preconditions;
+import com.google.devtools.build.lib.vfs.PathFragment;
+import com.google.errorprone.annotations.CompileTimeConstant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.Function;
 import javax.annotation.Nullable;
 
 /**
@@ -104,9 +108,9 @@ public final class CustomCommandLine extends CommandLine {
   /**
    * An ArgvFragment that expands a collection of objects in a user-specified way.
    *
-   * <p>To construct one, use {@link VectorArg#of} with your collection of objects,
-   * and configure the returned object depending on how you want the expansion to
-   * take place. Finally, pass it to {@link CustomCommandLine.Builder#add(VectorArg.Builder}.
+   * <p>To construct one, use {@link VectorArg#of} with your collection of objects, and configure
+   * the returned object depending on how you want the expansion to take place. Finally, pass it to
+   * {@link CustomCommandLine.Builder#addExecPaths(VectorArg.Builder}.
    */
   public static final class VectorArg implements ArgvFragment {
     private static Interner<VectorArg> interner = BlazeInterners.newStrongInterner();
@@ -124,7 +128,7 @@ public final class CustomCommandLine extends CommandLine {
       this.hasJoinWith = hasJoinWith;
     }
 
-    private static void push(List<Object> arguments, Builder argv) {
+    private static void push(List<Object> arguments, Builder<?> argv) {
       VectorArg vectorArg =
           new VectorArg(
               argv.mapFn != null,
@@ -155,7 +159,7 @@ public final class CustomCommandLine extends CommandLine {
       List<Object> mutatedValues = Lists.newArrayList(values);
       int count = mutatedValues.size();
       if (hasMapEach) {
-        Function<Object, Object> mapFn = (Function<Object, Object>) arguments.get(argi++);
+        Function<Object, String> mapFn = (Function<Object, String>) arguments.get(argi++);
         for (int i = 0; i < count; ++i) {
           mutatedValues.set(i, mapFn.apply(mutatedValues.get(i)));
         }
@@ -186,59 +190,74 @@ public final class CustomCommandLine extends CommandLine {
       return argi;
     }
 
-    public static Builder of(@Nullable ImmutableCollection<?> values) {
-      return new Builder(values);
+    public static <T> Builder<T> of(@Nullable ImmutableCollection<T> values) {
+      return new Builder<>(values);
     }
 
-    public static Builder of(@Nullable NestedSet<?> values) {
-      return new Builder(values);
+    public static <T> Builder<T> of(@Nullable NestedSet<T> values) {
+      return new Builder<>(values);
     }
 
     /** Builder for a VectorArg */
-    public static class Builder {
-      @Nullable private final Iterable<?> values;
+    public static class Builder<T> {
+      @Nullable private final Iterable<T> values;
       private final boolean isEmpty;
       private String formatEach;
       private String beforeEach;
-      private Function<?, String> mapFn;
+      private Function<T, String> mapFn;
       private String joinWith;
 
-      private Builder(@Nullable ImmutableCollection<?> values) {
+      private Builder(@Nullable ImmutableCollection<T> values) {
         this(values, values == null || values.isEmpty());
       }
 
-      private Builder(@Nullable NestedSet<?> values) {
+      private Builder(@Nullable NestedSet<T> values) {
         this(values, values == null || values.isEmpty());
       }
 
-      private Builder(@Nullable Iterable<?> values, boolean isEmpty) {
+      private Builder(@Nullable Iterable<T> values, boolean isEmpty) {
         this.values = values;
         this.isEmpty = isEmpty;
       }
 
       /** Each argument is formatted via {@link String#format}. */
-      public Builder formatEach(String formatEach) {
+      public Builder<T> formatEach(@CompileTimeConstant String formatEach) {
         Preconditions.checkNotNull(formatEach);
         this.formatEach = formatEach;
         return this;
       }
 
       /** Each argument is prepended by the beforeEach param. */
-      public Builder beforeEach(String beforeEach) {
+      public Builder<T> beforeEach(@CompileTimeConstant String beforeEach) {
         Preconditions.checkNotNull(beforeEach);
         this.beforeEach = beforeEach;
         return this;
       }
 
       /** Each argument is mapped using the supplied map function */
-      public <T> Builder mapEach(Function<T, String> mapFn) {
+      @SuppressWarnings("unchecked")
+      public Builder<String> mapEach(Function<T, String> mapFn) {
         Preconditions.checkNotNull(mapFn);
         this.mapFn = mapFn;
-        return this;
+
+        // To save on GC we can simply cast the object and return it.
+        return (Builder<String>) this;
       }
 
       /** Once all arguments have been evaluated, they are joined with this delimiter */
-      public Builder joinWith(String delimiter) {
+      public Builder<T> joinWith(@CompileTimeConstant String delimiter) {
+        Preconditions.checkNotNull(delimiter);
+        this.joinWith = delimiter;
+        return this;
+      }
+
+      /**
+       * Once all arguments have been evaluated, they are joined with this delimiter
+       *
+       * <p>Prefer use of {@link Builder#joinWith} to this method, as it will be more memory
+       * efficient.
+       */
+      public Builder<T> joinWithDynamicString(String delimiter) {
         Preconditions.checkNotNull(delimiter);
         this.joinWith = delimiter;
         return this;
@@ -362,38 +381,6 @@ public final class CustomCommandLine extends CommandLine {
     }
   }
 
-  private static final class JoinExpandedTreeArtifactExecPathsArg
-      extends TreeArtifactExpansionArgvFragment {
-
-    private final String delimiter;
-    private final Artifact treeArtifact;
-
-    private JoinExpandedTreeArtifactExecPathsArg(String delimiter, Artifact treeArtifact) {
-      Preconditions.checkArgument(
-          treeArtifact.isTreeArtifact(), "%s is not a TreeArtifact", treeArtifact);
-      this.delimiter = delimiter;
-      this.treeArtifact = treeArtifact;
-    }
-
-    @Override
-    void eval(ImmutableList.Builder<String> builder, ArtifactExpander artifactExpander) {
-      Set<Artifact> expandedArtifacts = new TreeSet<>();
-      artifactExpander.expand(treeArtifact, expandedArtifacts);
-
-      if (!expandedArtifacts.isEmpty()) {
-        builder.add(Artifact.joinExecPaths(delimiter, expandedArtifacts));
-      }
-    }
-
-    @Override
-    public String describe() {
-      return String.format(
-          "JoinExpandedTreeArtifactExecPathsArg{ delimiter: %s, treeArtifact: %s}",
-          delimiter,
-          treeArtifact.getExecPathString());
-    }
-  }
-
   private static final class ExpandedTreeArtifactExecPathsArg
       extends TreeArtifactExpansionArgvFragment {
     private final Artifact treeArtifact;
@@ -419,32 +406,6 @@ public final class CustomCommandLine extends CommandLine {
       return String.format(
           "ExpandedTreeArtifactExecPathsArg{ treeArtifact: %s}",
           treeArtifact.getExecPathString());
-    }
-  }
-
-  /**
-   * An argument object that evaluates to a formatted string for {@link TreeFileArtifact} exec
-   * paths, enclosing the associated string format template and {@link TreeFileArtifact}s.
-   */
-  private static final class TreeFileArtifactExecPathWithTemplateArg
-      extends TreeFileArtifactArgvFragment {
-
-    private final String template;
-    private final Artifact placeHolderTreeArtifact;
-
-    private TreeFileArtifactExecPathWithTemplateArg(String template, Artifact artifact) {
-      Preconditions.checkArgument(artifact.isTreeArtifact(), "%s must be a TreeArtifact",
-          artifact);
-      this.template = template;
-      this.placeHolderTreeArtifact = artifact;
-    }
-
-    @Override
-    Object substituteTreeArtifact(Map<Artifact, TreeFileArtifact> substitutionMap) {
-      Artifact treeFileArtifact = substitutionMap.get(placeHolderTreeArtifact);
-      Preconditions.checkNotNull(treeFileArtifact, "Artifact to substitute: %s",
-          placeHolderTreeArtifact);
-      return String.format(template, treeFileArtifact.getExecPath());
     }
   }
 
@@ -491,68 +452,299 @@ public final class CustomCommandLine extends CommandLine {
     private final List<Object> arguments = new ArrayList<>();
 
     /**
-     * Adds a value to the argument list.
+     * Adds a constant-value string.
      *
-     * <p>At expansion time, the object is turned into a string by calling {@link Object#toString},
-     * unless it is an {@link Artifact}, in which case the exec path is used.
+     * <p>Prefer this over its dynamic cousin, as using static strings saves memory.
      */
-    public Builder add(@Nullable Object value) {
+    public Builder add(@CompileTimeConstant String value) {
+      return addObjectInternal(value);
+    }
+
+    /**
+     * Adds a dynamically calculated string.
+     *
+     * <p>Consider whether using another method could be more efficient. For instance, rather than
+     * calling this method with an Artifact's exec path, just add the artifact itself. It will
+     * lazily get converted to its exec path. Same with labels, path fragments, and many other
+     * objects.
+     *
+     * <p>If you are joining some list into a single argument, consider using {@link VectorArg}.
+     *
+     * <p>If you are formatting a string, consider using {@link Builder#addFormatted(String,
+     * Object...)}.
+     *
+     * <p>There are many other ways you can try to avoid calling this. In general, try to use
+     * constants or objects that are already on the heap elsewhere.
+     */
+    public Builder addDynamicString(@Nullable String value) {
+      return addObjectInternal(value);
+    }
+
+    /**
+     * Adds a label value by calling {@link Label#getCanonicalForm}.
+     *
+     * <p>Prefer this over manually calling {@link Label#getCanonicalForm}, as it avoids a copy of
+     * the label value.
+     */
+    public Builder addLabel(@Nullable Label value) {
+      return addObjectInternal(value);
+    }
+
+    /**
+     * Adds an artifact by calling {@link PathFragment#getPathString}.
+     *
+     * <p>Prefer this over manually calling {@link PathFragment#getPathString}, as it avoids storing
+     * a copy of the path string.
+     */
+    public Builder addPath(@Nullable PathFragment value) {
+      return addObjectInternal(value);
+    }
+
+    /**
+     * Adds an artifact by calling {@link Artifact#getExecPath}.
+     *
+     * <p>Prefer this over manually calling {@link Artifact#getExecPath}, as it avoids storing a
+     * copy of the artifact path string.
+     */
+    public Builder addExecPath(@Nullable Artifact value) {
+      return addObjectInternal(value);
+    }
+
+    /** Adds a lazily expanded string. */
+    public Builder addLazyString(@Nullable LazyString value) {
+      return addObjectInternal(value);
+    }
+
+    private Builder addObjectInternal(@Nullable Object value) {
       if (value != null) {
         arguments.add(value);
       }
       return this;
     }
 
+    /**
+     * Adds a string argument to the command line.
+     *
+     * <p>If the value is null, neither the arg nor the value is added.
+     */
+    public Builder add(@CompileTimeConstant String arg, @Nullable String value) {
+      return addObjectInternal(arg, value);
+    }
+
+    /**
+     * Adds a label value by calling {@link Label#getCanonicalForm}.
+     *
+     * <p>Prefer this over manually calling {@link Label#getCanonicalForm}, as it avoids storing a
+     * copy of the label value.
+     *
+     * <p>If the value is null, neither the arg nor the value is added.
+     */
+    public Builder addLabel(@CompileTimeConstant String arg, @Nullable Label value) {
+      return addObjectInternal(arg, value);
+    }
+
+    /**
+     * Adds an artifact by calling {@link PathFragment#getPathString}.
+     *
+     * <p>Prefer this over manually calling {@link PathFragment#getPathString}, as it avoids storing
+     * a copy of the path string.
+     *
+     * <p>If the value is null, neither the arg nor the value is added.
+     */
+    public Builder addPath(@CompileTimeConstant String arg, @Nullable PathFragment value) {
+      return addObjectInternal(arg, value);
+    }
+
+    /**
+     * Adds an artifact by calling {@link Artifact#getExecPath}.
+     *
+     * <p>Prefer this over manually calling {@link Artifact#getExecPath}, as it avoids storing a
+     * copy of the artifact path string.
+     *
+     * <p>If the value is null, neither the arg nor the value is added.
+     */
+    public Builder addExecPath(@CompileTimeConstant String arg, @Nullable Artifact value) {
+      return addObjectInternal(arg, value);
+    }
+
+    /** Adds a lazily expanded string. */
+    public Builder addLazyString(@CompileTimeConstant String arg, @Nullable LazyString value) {
+      return addObjectInternal(arg, value);
+    }
+
     /** Adds the arg and the passed value if the value is non-null. */
-    public Builder add(String arg, @Nullable Object value) {
+    private Builder addObjectInternal(@CompileTimeConstant String arg, @Nullable Object value) {
       Preconditions.checkNotNull(arg);
       if (value != null) {
         arguments.add(arg);
-        add(value);
+        addObjectInternal(value);
       }
       return this;
     }
 
-    /** Adds the string representation of the passed values. */
-    public Builder add(@Nullable ImmutableCollection<?> values) {
+    /**
+     * Adds the passed strings to the command line.
+     *
+     * <p>If you are converting long lists or nested sets of a different type to string lists,
+     * please try to use {@link Builder#addExecPaths(VectorArg.Builder)} instead of this method.
+     */
+    public Builder add(@Nullable ImmutableCollection<String> values) {
+      return addImmutableCollectionInternal(values);
+    }
+
+    /** Adds the passed paths to the command line. */
+    public Builder addPaths(@Nullable ImmutableCollection<PathFragment> values) {
+      return addImmutableCollectionInternal(values);
+    }
+
+    /**
+     * Adds the artifacts' exec paths to the command line.
+     *
+     * <p>Do not use this method if the list is derived from a flattened nested set. Instead, figure
+     * out how to avoid flattening the set and use {@link
+     * Builder#addExecPaths(NestedSet<Artifact>)}.
+     */
+    public Builder addExecPaths(@Nullable ImmutableCollection<Artifact> values) {
+      return addImmutableCollectionInternal(values);
+    }
+
+    private Builder addImmutableCollectionInternal(@Nullable ImmutableCollection<?> values) {
       if (values != null) {
         arguments.add(values);
       }
       return this;
     }
 
-    /** Adds the string representation of the passed values. */
-    public Builder add(@Nullable NestedSet<?> values) {
+    /** Adds the passed strings to the command line. */
+    public Builder add(@Nullable NestedSet<String> values) {
+      return addNestedSetInternal(values);
+    }
+
+    /** Adds the passed paths to the command line. */
+    public Builder addPaths(@Nullable NestedSet<PathFragment> values) {
+      return addNestedSetInternal(values);
+    }
+
+    /** Adds the artifacts' exec paths to the command line. */
+    public Builder addExecPaths(@Nullable NestedSet<Artifact> values) {
+      return addNestedSetInternal(values);
+    }
+
+    private Builder addNestedSetInternal(@Nullable NestedSet<?> values) {
       if (values != null) {
         arguments.add(values);
       }
       return this;
     }
 
-    /**
-     * Adds the arg followed by the string representation of the passed values.
-     *
-     * <p>If values is empty, the arg isn't added.
-     */
-    public Builder add(String arg, @Nullable ImmutableCollection<?> values) {
-      Preconditions.checkNotNull(arg);
-      if (values != null && !values.isEmpty()) {
-        arguments.add(arg);
-        add(values);
+    /** Calls {@link String#format} at command line expansion time. */
+    public Builder addFormatted(@CompileTimeConstant String formatStr, Object... args) {
+      Preconditions.checkNotNull(formatStr);
+      FormatArg.push(arguments, formatStr, args);
+      return this;
+    }
+
+    /** Cancatenates the passed prefix string and the object's string representation. */
+    public Builder addWithPrefix(@CompileTimeConstant String prefix, @Nullable Object arg) {
+      Preconditions.checkNotNull(prefix);
+      if (arg != null) {
+        PrefixArg.push(arguments, prefix, arg);
       }
       return this;
     }
 
     /**
-     * Adds the arg followed by the string representation of the passed values.
+     * Cancatenates the passed prefix string and the object's string representation.
+     *
+     * <p>Prefer {@link Builder#addWithPrefix}, as it will be more memory efficient.
+     */
+    public Builder addWithDynamicPrefix(String prefix, @Nullable Object arg) {
+      Preconditions.checkNotNull(prefix);
+      if (arg != null) {
+        PrefixArg.push(arguments, prefix, arg);
+      }
+      return this;
+    }
+
+    /**
+     * Adds the arg followed by the passed strings.
      *
      * <p>If values is empty, the arg isn't added.
      */
-    public Builder add(String arg, @Nullable NestedSet<?> values) {
+    public Builder add(
+        @CompileTimeConstant String arg, @Nullable ImmutableCollection<String> values) {
+      return addImmutableCollectionInternal(arg, values);
+    }
+
+    /**
+     * Adds the arg followed by the path strings.
+     *
+     * <p>If values is empty, the arg isn't added.
+     */
+    public Builder addPaths(
+        @CompileTimeConstant String arg, @Nullable ImmutableCollection<PathFragment> values) {
+      return addImmutableCollectionInternal(arg, values);
+    }
+
+    /**
+     * Adds the arg followed by the artifacts' exec paths.
+     *
+     * <p>Do not use this method if the list is derived from a flattened nested set. Instead, figure
+     * out how to avoid flattening the set and use {@link Builder#addExecPaths(String,
+     * NestedSet<Artifact>)}.
+     *
+     * <p>If values is empty, the arg isn't added.
+     */
+    public Builder addExecPaths(
+        @CompileTimeConstant String arg, @Nullable ImmutableCollection<Artifact> values) {
+      return addImmutableCollectionInternal(arg, values);
+    }
+
+    private Builder addImmutableCollectionInternal(
+        @CompileTimeConstant String arg, @Nullable ImmutableCollection<?> values) {
       Preconditions.checkNotNull(arg);
       if (values != null && !values.isEmpty()) {
         arguments.add(arg);
-        add(values);
+        addImmutableCollectionInternal(values);
+      }
+      return this;
+    }
+
+    /**
+     * Adds the arg followed by the passed strings.
+     *
+     * <p>If values is empty, the arg isn't added.
+     */
+    public Builder add(@CompileTimeConstant String arg, @Nullable NestedSet<String> values) {
+      return addNestedSetInternal(arg, values);
+    }
+
+    /**
+     * Adds the arg followed by the path fragments.
+     *
+     * <p>If values is empty, the arg isn't added.
+     */
+    public Builder addPaths(
+        @CompileTimeConstant String arg, @Nullable NestedSet<PathFragment> values) {
+      return addNestedSetInternal(arg, values);
+    }
+
+    /**
+     * Adds the arg followed by the artifacts' exec paths.
+     *
+     * <p>If values is empty, the arg isn't added.
+     */
+    public Builder addExecPaths(
+        @CompileTimeConstant String arg, @Nullable NestedSet<Artifact> values) {
+      return addNestedSetInternal(arg, values);
+    }
+
+    private Builder addNestedSetInternal(
+        @CompileTimeConstant String arg, @Nullable NestedSet<?> values) {
+      Preconditions.checkNotNull(arg);
+      if (values != null && !values.isEmpty()) {
+        arguments.add(arg);
+        addNestedSetInternal(values);
       }
       return this;
     }
@@ -562,7 +754,29 @@ public final class CustomCommandLine extends CommandLine {
      *
      * <p>Please see {@link VectorArg} for more information.
      */
-    public Builder add(VectorArg.Builder vectorArg) {
+    public Builder add(VectorArg.Builder<String> vectorArg) {
+      return addVectorArgInternal(vectorArg);
+    }
+
+    /**
+     * Adds the expansion of the passed vector arg's path strings.
+     *
+     * <p>Please see {@link VectorArg} for more information.
+     */
+    public Builder addPaths(VectorArg.Builder<PathFragment> vectorArg) {
+      return addVectorArgInternal(vectorArg);
+    }
+
+    /**
+     * Adds the expansion of the passed vector arg's exec paths.
+     *
+     * <p>Please see {@link VectorArg} for more information.
+     */
+    public Builder addExecPaths(VectorArg.Builder<Artifact> vectorArg) {
+      return addVectorArgInternal(vectorArg);
+    }
+
+    private Builder addVectorArgInternal(VectorArg.Builder<?> vectorArg) {
       if (!vectorArg.isEmpty) {
         VectorArg.push(arguments, vectorArg);
       }
@@ -573,43 +787,72 @@ public final class CustomCommandLine extends CommandLine {
      * Adds the arg followed by the expansion of the vector arg.
      *
      * <p>Please see {@link VectorArg} for more information.
+     *
      * <p>If values is empty, the arg isn't added.
      */
-    public Builder add(String arg, VectorArg.Builder vectorArg) {
+    public Builder add(@CompileTimeConstant String arg, VectorArg.Builder<String> vectorArg) {
+      return addVectorArgInternal(arg, vectorArg);
+    }
+
+    /**
+     * Adds the arg followed by the expansion of the vector arg's path strings.
+     *
+     * <p>Please see {@link VectorArg} for more information.
+     *
+     * <p>If values is empty, the arg isn't added.
+     */
+    public Builder addPaths(
+        @CompileTimeConstant String arg, VectorArg.Builder<PathFragment> vectorArg) {
+      return addVectorArgInternal(arg, vectorArg);
+    }
+
+    /**
+     * Adds the arg followed by the expansion of the vector arg's exec paths.
+     *
+     * <p>Please see {@link VectorArg} for more information.
+     *
+     * <p>If values is empty, the arg isn't added.
+     */
+    public Builder addExecPaths(
+        @CompileTimeConstant String arg, VectorArg.Builder<Artifact> vectorArg) {
+      return addVectorArgInternal(arg, vectorArg);
+    }
+
+    private Builder addVectorArgInternal(
+        @CompileTimeConstant String arg, VectorArg.Builder<?> vectorArg) {
       Preconditions.checkNotNull(arg);
       if (!vectorArg.isEmpty) {
         arguments.add(arg);
-        add(vectorArg);
+        addVectorArgInternal(vectorArg);
       }
       return this;
     }
 
-    public Builder add(@Nullable CustomArgv arg) {
+    public Builder addCustomArgv(@Nullable CustomArgv arg) {
       if (arg != null) {
         arguments.add(arg);
       }
       return this;
     }
 
-    public Builder add(@Nullable CustomMultiArgv arg) {
+    public Builder addCustomMultiArgv(@Nullable CustomMultiArgv arg) {
       if (arg != null) {
         arguments.add(arg);
       }
       return this;
     }
 
-    /** Calls {@link String#format} at command line expansion time. */
-    public Builder addFormatted(String formatStr, Object... args) {
-      Preconditions.checkNotNull(formatStr);
-      FormatArg.push(arguments, formatStr, args);
-      return this;
-    }
-
-    /** Cancatenates the passed prefix string and the object's string representation. */
-    public Builder addWithPrefix(String prefix, @Nullable Object arg) {
-      Preconditions.checkNotNull(prefix);
-      if (arg != null) {
-        PrefixArg.push(arguments, prefix, arg);
+    /**
+     * Adds a placeholder TreeArtifact exec path. When the command line is used in an action
+     * template, the placeholder will be replaced by the exec path of a {@link TreeFileArtifact}
+     * inside the TreeArtifact at execution time for each expanded action.
+     *
+     * @param treeArtifact the TreeArtifact that will be evaluated to one of its child {@link
+     *     TreeFileArtifact} at execution time
+     */
+    public Builder addPlaceholderTreeArtifactExecPath(@Nullable Artifact treeArtifact) {
+      if (treeArtifact != null) {
+        arguments.add(new TreeFileArtifactExecPathArg(treeArtifact));
       }
       return this;
     }
@@ -633,55 +876,6 @@ public final class CustomCommandLine extends CommandLine {
     }
 
     /**
-     * Adds a placeholder TreeArtifact exec path. When the command line is used in an action
-     * template, the placeholder will be replaced by the exec path of a {@link TreeFileArtifact}
-     * inside the TreeArtifact at execution time for each expanded action.
-     *
-     * @param treeArtifact the TreeArtifact that will be evaluated to one of its child {@link
-     *     TreeFileArtifact} at execution time
-     */
-    public Builder addPlaceholderTreeArtifactExecPath(@Nullable Artifact treeArtifact) {
-      if (treeArtifact != null) {
-        arguments.add(new TreeFileArtifactExecPathArg(treeArtifact));
-      }
-      return this;
-    }
-
-    /**
-     * Adds a formatted string containing the exec path of a placeholder TreeArtifact. When the
-     * command line is used in an action template, the placeholder will be replaced by the exec path
-     * of a {@link TreeFileArtifact} inside the TreeArtifact at execution time for each expanded
-     * action.
-     *
-     * @param template the string format template containing a single string format specifier (%s)
-     *     to be replaced by the artifact exec path string.
-     * @param treeArtifact the TreeArtifact that will be evaluated to one of their child {@link
-     *     TreeFileArtifact} at execution time
-     */
-    public Builder addPlaceholderTreeArtifactFormattedExecPath(
-        String template, @Nullable Artifact treeArtifact) {
-      Preconditions.checkNotNull(template);
-      if (treeArtifact != null) {
-        arguments.add(new TreeFileArtifactExecPathWithTemplateArg(template, treeArtifact));
-      }
-      return this;
-    }
-
-    /**
-     * Adds a string joined together by the exec paths of all {@link TreeFileArtifact}s under
-     * {@code treeArtifact}.
-     *
-     * @param delimiter the delimiter used to join the artifact exec paths.
-     * @param treeArtifact the TreeArtifact containing the {@link TreeFileArtifact}s to join.
-     */
-    public Builder addJoinExpandedTreeArtifactExecPath(String delimiter, Artifact treeArtifact) {
-      Preconditions.checkNotNull(delimiter);
-      Preconditions.checkNotNull(treeArtifact);
-      arguments.add(new JoinExpandedTreeArtifactExecPathsArg(delimiter, treeArtifact));
-      return this;
-    }
-
-    /**
      * Adds the exec paths (one argument per exec path) of all {@link TreeFileArtifact}s under
      * {@code treeArtifact}.
      *
@@ -696,10 +890,20 @@ public final class CustomCommandLine extends CommandLine {
     public CustomCommandLine build() {
       return new CustomCommandLine(arguments);
     }
+
+    public boolean isEmpty() {
+      return arguments.isEmpty();
+    }
   }
 
   public static Builder builder() {
     return new Builder();
+  }
+
+  public static Builder builder(Builder other) {
+    Builder builder = new Builder();
+    builder.arguments.addAll(other.arguments);
+    return builder;
   }
 
   private final ImmutableList<Object> arguments;
