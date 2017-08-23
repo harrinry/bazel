@@ -66,6 +66,8 @@ while [[ $# -gt 0 ]]; do
       HASHED_FILELIST="${ARG%.objlist}_hashes.objlist"
       rm -f "${HASHED_FILELIST}"
       # Use python helper script for fast md5 calculation of many strings.
+      which python
+      exit 1
       python "${MY_LOCATION}/make_hashed_objlist.py" "${ARG}" "${HASHED_FILELIST}"
       ARGS+=("${HASHED_FILELIST}")
       ;;
