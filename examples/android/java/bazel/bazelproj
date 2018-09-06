@@ -1,0 +1,13 @@
+directories:
+  .
+
+targets:
+  //examples/android/java/bazel:hello_world
+
+additional_languages:
+  android
+  c
+  java
+
+android_sdk_platform: android-28
+
