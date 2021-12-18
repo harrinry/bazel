@@ -37,6 +37,7 @@
 
 #include "src/main/cpp/util/port.h"
 #include "src/main/native/latin1_jni_path.h"
+#include "src/main/native/utf8_jni.h"
 #include "src/main/native/macros.h"
 
 #if defined(O_DIRECTORY)
@@ -1115,7 +1116,7 @@ Java_com_google_devtools_build_lib_unix_NativePosixFiles_deleteTreesBelow(
 }
 
 ////////////////////////////////////////////////////////////////////////
-// Linux extended file attributes
+// macOS / Linux extended file attributes
 
 namespace {
 typedef ssize_t getxattr_func(const char *path, const char *name,
@@ -1126,13 +1127,13 @@ static jbyteArray getxattr_common(JNIEnv *env,
                                   jstring name,
                                   getxattr_func getxattr) {
   const char *path_chars = GetStringLatin1Chars(env, path);
-  const char *name_chars = GetStringLatin1Chars(env, name);
+  const auto name_utf8 = GetStringUtf8chars(env, name);
 
   // TODO(bazel-team): on ERANGE, try again with larger buffer.
   jbyte value[4096];
   jbyteArray result = nullptr;
   bool attr_not_found = false;
-  ssize_t size = getxattr(path_chars, name_chars, value, arraysize(value),
+  ssize_t size = getxattr(path_chars, name_utf8.data(), value, arraysize(value),
                           &attr_not_found);
   if (size == -1) {
     if (!attr_not_found) {
@@ -1147,8 +1148,30 @@ static jbyteArray getxattr_common(JNIEnv *env,
     }
   }
   ReleaseStringLatin1Chars(path_chars);
-  ReleaseStringLatin1Chars(name_chars);
+
   return result;
+}
+
+typedef int setxattr_func(const char *path, const char *name,
+                          void *value, size_t size);
+
+static int setxattr_common(JNIEnv *env,
+                           jstring path,
+                           jstring name,
+                           jbyteArray value,
+                           setxattr_func setxattr) {
+  const char *path_chars = GetStringLatin1Chars(env, path);
+  const auto name_utf8 = GetStringUtf8chars(env, name);
+  auto value_utf8 = GetByteArrayUtf8Chars(env, value);
+  int ret = setxattr(path_chars, name_utf8.data(), value_utf8.data(), value_utf8.size());
+
+  if (ret != 0) {
+    PostException(env, errno, name_utf8.data());
+  }
+
+  ReleaseStringLatin1Chars(path_chars);
+
+  return ret;
 }
 }  // namespace
 
@@ -1166,6 +1189,15 @@ Java_com_google_devtools_build_lib_unix_NativePosixFiles_lgetxattr(JNIEnv *env,
                                                       jstring path,
                                                       jstring name) {
   return getxattr_common(env, path, name, portable_lgetxattr);
+}
+
+extern "C" JNIEXPORT int JNICALL
+Java_com_google_devtools_build_lib_unix_NativePosixFiles_setxattr(JNIEnv *env,
+                                                      jclass clazz,
+                                                      jstring path,
+                                                      jstring name,
+                                                      jbyteArray value) {
+  return setxattr_common(env, path, name, value, portable_setxattr);
 }
 
 extern "C" JNIEXPORT jint JNICALL

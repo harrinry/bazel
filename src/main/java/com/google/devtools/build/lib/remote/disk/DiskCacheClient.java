@@ -43,11 +43,18 @@ public class DiskCacheClient implements RemoteCacheClient {
   private final Path root;
   private final boolean verifyDownloads;
   private final DigestUtil digestUtil;
+  private final String unixDigestHashAttributeName;
 
-  public DiskCacheClient(Path root, boolean verifyDownloads, DigestUtil digestUtil) {
+  public DiskCacheClient(
+    Path root,
+    boolean verifyDownloads,
+    DigestUtil digestUtil,
+    String unixDigestHashAttributeName
+  ) {
     this.root = root;
     this.verifyDownloads = verifyDownloads;
     this.digestUtil = digestUtil;
+    this.unixDigestHashAttributeName = unixDigestHashAttributeName;
   }
 
   /** Returns {@code true} if the provided {@code key} is stored in the CAS. */
@@ -177,6 +184,15 @@ public class DiskCacheClient implements RemoteCacheClient {
     try (OutputStream out = temp.getOutputStream()) {
       ByteStreams.copy(in, out);
     }
+
+    if (!this.unixDigestHashAttributeName.isEmpty()) {
+      if (temp.setxattr(this.unixDigestHashAttributeName, temp.getDigest()) != 0) {
+        throw new IOException(
+          "Could not write extended attributes for file: " + temp.getPathString()
+        );
+      }
+    }
+
     // TODO(ulfjack): Fsync temp here before we rename it to avoid data loss in the case of machine
     // crashes (the OS may reorder the writes and the rename).
     temp.renameTo(target);

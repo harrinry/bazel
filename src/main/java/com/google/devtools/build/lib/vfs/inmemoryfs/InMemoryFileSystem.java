@@ -653,6 +653,27 @@ public class InMemoryFileSystem extends AbstractFileSystemWithCustomStat {
     return ((FileInfo) status).getxattr(name);
   }
 
+  @Override
+  public synchronized int setxattr(PathFragment path, String name, byte[] value)
+    throws IOException {
+      InMemoryContentInfo status = inodeStat(path, true);
+
+      if (status.isDirectory()) {
+        throw Errno.EISDIR.exception(path);
+      }
+
+      if (!isReadable(path)) {
+        throw Errno.EACCES.exception(path);
+      }
+
+      if (status.isSymbolicLink()) {
+        return 0;
+      }
+
+      Preconditions.checkState(status instanceof FileInfo, status);
+      return 0;
+  }
+
   /** Creates a new file at the given path and returns its inode. */
   protected InMemoryContentInfo getOrCreateWritableInode(PathFragment path) throws IOException {
     // open(WR_ONLY) of a dangling link writes through the link.  That means

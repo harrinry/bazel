@@ -91,6 +91,12 @@ ssize_t portable_lgetxattr(const char *path, const char *name, void *value,
   return result;
 }
 
+int portable_setxattr(const char *path, const char *name, void *value, size_t size) {
+  const int options = 0; // Follow symlinks, create or replace attrs.
+  int ret = setxattr(path, name, value, size, options);
+  return ret;
+}
+
 int portable_sysctlbyname(const char *name_chars, void *mibp, size_t *sizep) {
   errno = ENOSYS;
   return -1;

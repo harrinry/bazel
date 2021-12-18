@@ -48,6 +48,7 @@ public enum ProfilerTask {
   // TODO(olaola): rename to VFS_DIGEST. This refers to all digest function computations.
   VFS_MD5("VFS md5", Threshold.TEN_MILLIS, /* collectsSlowestInstances= */ true),
   VFS_XATTR("VFS xattr", Threshold.TEN_MILLIS, /* collectsSlowestInstances= */ true),
+  VFS_SETXATTR("VFS setxattr", Threshold.TEN_MILLIS, /* collectsSlowestInstances= */ true),
   VFS_DELETE("VFS delete", Threshold.TEN_MILLIS),
   VFS_OPEN("VFS open", Threshold.TEN_MILLIS, /* collectsSlowestInstances= */ true),
   VFS_READ("VFS read", Threshold.TEN_MILLIS, /* collectsSlowestInstances= */ true),

@@ -74,6 +74,7 @@ import com.google.devtools.build.lib.remote.util.DigestUtil;
 import com.google.devtools.build.lib.remote.util.TracingMetadataUtils;
 import com.google.devtools.build.lib.remote.util.Utils;
 import com.google.devtools.build.lib.runtime.BlazeModule;
+import com.google.devtools.build.lib.runtime.BlazeServerStartupOptions;
 import com.google.devtools.build.lib.runtime.BuildEventArtifactUploaderFactory;
 import com.google.devtools.build.lib.runtime.Command;
 import com.google.devtools.build.lib.runtime.CommandEnvironment;
@@ -211,6 +212,7 @@ public final class RemoteModule extends BlazeModule {
       CommandEnvironment env,
       AuthAndTLSOptions authAndTlsOptions,
       RemoteOptions remoteOptions,
+      BlazeServerStartupOptions startupOptions,
       DigestUtil digestUtil) {
     Credentials creds;
     try {
@@ -230,6 +232,7 @@ public final class RemoteModule extends BlazeModule {
       cacheClient =
           RemoteCacheClientFactory.create(
               remoteOptions,
+              startupOptions,
               creds,
               authAndTlsOptions,
               Preconditions.checkNotNull(env.getWorkingDirectory(), "workingDirectory"),
@@ -251,12 +254,17 @@ public final class RemoteModule extends BlazeModule {
     Preconditions.checkState(remoteOptions == null, "remoteOptions must be null");
 
     RemoteOptions remoteOptions = env.getOptions().getOptions(RemoteOptions.class);
+
     if (remoteOptions == null) {
       // Quit if no supported command is being used. See getCommandOptions for details.
       return;
     }
 
     this.remoteOptions = remoteOptions;
+
+    BlazeServerStartupOptions startupOptions = env
+      .getStartupOptionsProvider()
+      .getOptions(BlazeServerStartupOptions.class);
 
     AuthAndTLSOptions authAndTlsOptions = env.getOptions().getOptions(AuthAndTLSOptions.class);
     DigestHashFunction hashFn = env.getRuntime().getFileSystem().getDigestFunction();
@@ -329,7 +337,13 @@ public final class RemoteModule extends BlazeModule {
     }
 
     if ((enableHttpCache || enableDiskCache) && !enableGrpcCache) {
-      initHttpAndDiskCache(env, authAndTlsOptions, remoteOptions, digestUtil);
+      initHttpAndDiskCache(
+        env,
+        authAndTlsOptions,
+        remoteOptions,
+        startupOptions,
+        digestUtil
+      );
       return;
     }
 
@@ -562,7 +576,9 @@ public final class RemoteModule extends BlazeModule {
                   remoteOptions.remoteVerifyDownloads,
                   digestUtil,
                   cacheClient,
-                  remoteOptions);
+                  remoteOptions,
+                  startupOptions
+              );
         } catch (IOException e) {
           handleInitFailure(env, e, Code.CACHE_INIT_FAILURE);
           return;
@@ -621,7 +637,9 @@ public final class RemoteModule extends BlazeModule {
                   remoteOptions.remoteVerifyDownloads,
                   digestUtil,
                   cacheClient,
-                  remoteOptions);
+                  remoteOptions,
+                  startupOptions
+              );
         } catch (IOException e) {
           handleInitFailure(env, e, Code.CACHE_INIT_FAILURE);
           return;

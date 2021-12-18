@@ -325,12 +325,12 @@ public final class NativePosixFiles {
 
   /********************************************************************
    *                                                                  *
-   *                  Linux extended file attributes                  *
+   *             macOS / Linux extended file attributes               *
    *                                                                  *
    ********************************************************************/
 
   /**
-   * Native wrapper around Linux getxattr(2) syscall.
+   * Native wrapper around macOS / Linux getxattr(2) syscall.
    *
    * @param path the file whose extended attribute is to be returned.
    * @param name the name of the extended attribute key.
@@ -342,8 +342,8 @@ public final class NativePosixFiles {
       throws IOException;
 
   /**
-   * Native wrapper around Linux lgetxattr(2) syscall.  (Like getxattr, but
-   * does not follow symbolic links.)
+   * Native wrapper around macOS / Linux lgetxattr(2) syscall.
+   * (Like getxattr, but does not follow symbolic links.)
    *
    * @param path the file whose extended attribute is to be returned.
    * @param name the name of the extended attribute key.
@@ -352,6 +352,18 @@ public final class NativePosixFiles {
    * @throws IOException if the call failed for any other reason.
    */
   public static native byte[] lgetxattr(String path, String name)
+      throws IOException;
+
+  /**
+   * Native wrapper around macOS / Linux setxattr(2) syscall.
+   *
+   * @param path the file whose extended attribute is to be set.
+   * @param name the name of the extended attribute key.
+   * @param value the value to set on the extended attribute key.
+   * @return 0 if the call succeeded.
+   * @throws IOException if the call failed for any other reason.
+   */
+  public static native int setxattr(String path, String name, byte[] value)
       throws IOException;
 
   /**

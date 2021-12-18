@@ -42,13 +42,17 @@ filegroup(
 )
 
 cc_library(
-    name = "latin1_jni_path",
+    name = "jni_helpers",
     srcs = [
         "latin1_jni_path.cc",
+        "utf8_jni.cc",
         ":jni.h",
         ":jni_md.h",
     ],
-    hdrs = ["latin1_jni_path.h"],
+    hdrs = [
+        "latin1_jni_path.h",
+        "utf8_jni.h",
+    ],
     includes = ["."],  # For jni headers.
 )
 
@@ -75,7 +79,7 @@ cc_binary(
     linkshared = 1,
     visibility = ["//src/main/java/com/google/devtools/build/lib/jni:__pkg__"],
     deps = [
-        ":latin1_jni_path",
+        ":jni_helpers",
         "//src/main/cpp/util",
         "//src/main/cpp/util:md5",
     ],

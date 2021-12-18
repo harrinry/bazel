@@ -413,6 +413,19 @@ public class UnixFileSystem extends AbstractFileSystemWithCustomStat {
   }
 
   @Override
+  public int setxattr(PathFragment path, String name, byte[] value) throws IOException {
+    String pathName = path.toString();
+    long startTime = Profiler.nanoTimeMaybe();
+    try {
+      return NativePosixFiles.setxattr(path.getPathString(), name, value);
+    } catch (UnsupportedOperationException e) {
+      return 0;
+    } finally {
+      profiler.logSimpleTask(startTime, ProfilerTask.VFS_SETXATTR, pathName);
+    }
+  }
+
+  @Override
   protected byte[] getFastDigest(PathFragment path) throws IOException {
     // Attempt to obtain the digest from an extended attribute attached to the file. This is much
     // faster than reading and digesting the file's contents on the fly, especially for large files.

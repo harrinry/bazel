@@ -669,6 +669,20 @@ public class Path implements Comparable<Path>, FileType.HasFileType {
   }
 
   /**
+   * Sets the extended attribute name to the given value if the filesystem supports
+   * extended attributes.
+   *
+   * @param name the name of the extended attribute to write.
+   * @param value the value of the extended attribute to write.
+   * @return 0 if the call succeeded, or the filesystem does not support extended
+   *    attributes.
+   * @throws an IOException if the call failed for any other reason.
+   */
+  public int setxattr(String name, byte[] value) throws IOException {
+    return fileSystem.setxattr(asFragment(), name, value);
+  }
+
+  /**
    * Gets a fast digest for the given path, or {@code null} if there isn't one available. The digest
    * should be suitable for detecting changes to the file.
    */

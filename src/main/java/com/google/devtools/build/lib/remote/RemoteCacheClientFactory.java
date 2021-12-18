@@ -25,6 +25,7 @@ import com.google.devtools.build.lib.remote.disk.DiskCacheClient;
 import com.google.devtools.build.lib.remote.http.HttpCacheClient;
 import com.google.devtools.build.lib.remote.options.RemoteOptions;
 import com.google.devtools.build.lib.remote.util.DigestUtil;
+import com.google.devtools.build.lib.runtime.BlazeServerStartupOptions;
 import com.google.devtools.build.lib.vfs.Path;
 import com.google.devtools.build.lib.vfs.PathFragment;
 import io.netty.channel.unix.DomainSocketAddress;
@@ -46,15 +47,24 @@ public final class RemoteCacheClientFactory {
       boolean remoteVerifyDownloads,
       DigestUtil digestUtil,
       RemoteCacheClient remoteCacheClient,
-      RemoteOptions options)
+      RemoteOptions options,
+      BlazeServerStartupOptions startupOptions
+  )
       throws IOException {
     DiskCacheClient diskCacheClient =
-        createDiskCache(workingDirectory, diskCachePath, remoteVerifyDownloads, digestUtil);
+        createDiskCache(
+          workingDirectory,
+          diskCachePath,
+          remoteVerifyDownloads,
+          startupOptions,
+          digestUtil
+        );
     return new DiskAndRemoteCacheClient(diskCacheClient, remoteCacheClient, options);
   }
 
   public static RemoteCacheClient create(
       RemoteOptions options,
+      BlazeServerStartupOptions startupOptions,
       @Nullable Credentials creds,
       AuthAndTLSOptions authAndTlsOptions,
       Path workingDirectory,
@@ -63,14 +73,26 @@ public final class RemoteCacheClientFactory {
     Preconditions.checkNotNull(workingDirectory, "workingDirectory");
     if (isHttpCache(options) && isDiskCache(options)) {
       return createDiskAndHttpCache(
-          workingDirectory, options.diskCache, options, creds, authAndTlsOptions, digestUtil);
+          workingDirectory,
+          options.diskCache,
+          options,
+          startupOptions,
+          creds,
+          authAndTlsOptions,
+          digestUtil
+      );
     }
     if (isHttpCache(options)) {
       return createHttp(options, creds, authAndTlsOptions, digestUtil);
     }
     if (isDiskCache(options)) {
       return createDiskCache(
-          workingDirectory, options.diskCache, options.remoteVerifyDownloads, digestUtil);
+          workingDirectory,
+          options.diskCache,
+          options.remoteVerifyDownloads,
+          startupOptions,
+          digestUtil
+      );
     }
     throw new IllegalArgumentException(
         "Unrecognized RemoteOptions configuration: remote Http cache URL and/or local disk cache"
@@ -129,20 +151,28 @@ public final class RemoteCacheClientFactory {
       Path workingDirectory,
       PathFragment diskCachePath,
       boolean verifyDownloads,
-      DigestUtil digestUtil)
+      BlazeServerStartupOptions startupOptions,
+      DigestUtil digestUtil
+  )
       throws IOException {
     Path cacheDir =
         workingDirectory.getRelative(Preconditions.checkNotNull(diskCachePath, "diskCachePath"));
     if (!cacheDir.exists()) {
       cacheDir.createDirectoryAndParents();
     }
-    return new DiskCacheClient(cacheDir, verifyDownloads, digestUtil);
+    return new DiskCacheClient(
+      cacheDir,
+      verifyDownloads,
+      digestUtil,
+      startupOptions.unixDigestHashAttributeName
+    );
   }
 
   private static RemoteCacheClient createDiskAndHttpCache(
       Path workingDirectory,
       PathFragment diskCachePath,
       RemoteOptions options,
+      BlazeServerStartupOptions startupOptions,
       Credentials cred,
       AuthAndTLSOptions authAndTlsOptions,
       DigestUtil digestUtil)
@@ -160,7 +190,9 @@ public final class RemoteCacheClientFactory {
         options.remoteVerifyDownloads,
         digestUtil,
         httpCache,
-        options);
+        options,
+        startupOptions
+    );
   }
 
   public static boolean isDiskCache(RemoteOptions options) {

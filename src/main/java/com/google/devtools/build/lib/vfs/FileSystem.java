@@ -315,6 +315,21 @@ public abstract class FileSystem {
   }
 
   /**
+   * Sets the value of the given extended attribute name if the filesystem supports
+   * extended attributes.
+   *
+   * @param path the file whose extended attribute is to be set.
+   * @param name the name of the extended attribute key.
+   * @param value the value to set on the extended attribute key.
+   * @return 0 if the call succeeded on a supported filesystem, or if the filesystem
+   *    does not support extended attributes.
+   * @throws IOException if the call failed for any other reason.
+   */
+  public int setxattr(PathFragment path, String name, byte[] value) throws IOException {
+    return 0;
+  }
+
+  /**
    * Gets a fast digest for the given path, or {@code null} if there isn't one available or the
    * filesystem doesn't support them. This digest should be suitable for detecting changes to the
    * file.

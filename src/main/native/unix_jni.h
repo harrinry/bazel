@@ -83,6 +83,10 @@ ssize_t portable_getxattr(const char *path, const char *name, void *value,
 ssize_t portable_lgetxattr(const char *path, const char *name, void *value,
                            size_t size, bool *attr_not_found);
 
+// Runs setxattr(2).
+// Defaults to 'create or replace' flags (flags is zero).
+int portable_setxattr(const char *path, const char *name, void *value, size_t size);
+
 // Run sysctlbyname(3), only available on darwin
 int portable_sysctlbyname(const char *name_chars, void *mibp, size_t *sizep);
 
